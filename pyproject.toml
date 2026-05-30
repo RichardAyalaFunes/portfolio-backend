@@ -19,8 +19,8 @@ dependencies = [
 [tool.poetry]
 packages = [{include = "backend", from = "src"}]
 
-[tool.fastapi]
-entrypoint = "backend.infrastructure.main:app"
+[tool.vercel]
+entrypoint = "src.backend.infrastructure.main:app"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
