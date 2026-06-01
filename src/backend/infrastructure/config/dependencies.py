@@ -16,7 +16,10 @@ from backend.application.avatar.generate_token.handler import GenerateTokenHandl
 from backend.application.avatar.generate_token.port import IGenerateTokenUseCase
 from backend.application.avatar.speak.handler import SpeakHandler
 from backend.application.avatar.speak.port import ISpeakUseCase
+from backend.application.realtime.create_session.handler import CreateRealtimeSessionHandler
+from backend.application.realtime.create_session.port import ICreateRealtimeSessionUseCase
 from backend.infrastructure.adapters.driven.liveavatar.avatar_client import LiveAvatarClient
+from backend.infrastructure.adapters.driven.openai.openai_realtime_client import OpenAIRealtimeClient
 from backend.infrastructure.adapters.driven.openai.openai_tts_client import OpenAITTSClient
 from backend.infrastructure.config.settings import Settings, get_settings
 
@@ -56,3 +59,26 @@ def get_generate_token_use_case(
 def get_speak_use_case(tts: OpenAITTSClientDep) -> ISpeakUseCase:
     """Wire SpeakHandler with the OpenAI TTS adapter."""
     return SpeakHandler(tts_client=tts)
+
+
+# ── Realtime ─────────────────────────────────────────────────────────────────
+
+
+def get_openai_realtime_client(request: Request) -> OpenAIRealtimeClient:
+    """Provide the lifespan-shared OpenAI Realtime driven adapter."""
+    return request.app.state.openai_realtime_client  # type: ignore[no-any-return]
+
+
+OpenAIRealtimeClientDep = Annotated[OpenAIRealtimeClient, Depends(get_openai_realtime_client)]
+
+
+def get_create_realtime_session_use_case(
+    client: OpenAIRealtimeClientDep,
+    settings: SettingsDep,
+) -> ICreateRealtimeSessionUseCase:
+    """Wire CreateRealtimeSessionHandler with its dependencies."""
+    return CreateRealtimeSessionHandler(
+        realtime_client=client,
+        default_model=settings.openai_realtime_model,
+        default_voice=settings.openai_realtime_voice,
+    )

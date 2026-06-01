@@ -39,6 +39,9 @@ class Settings(BaseSettings):
             )
         return keys
 
+    # ── Environment ──────────────────────────────────────────────────────────
+    environment: str = "development"  # set to "production" in prod env vars
+
     # ── CORS ─────────────────────────────────────────────────────────────────
     frontend_host: str = "localhost:5173"
 
@@ -54,6 +57,10 @@ class Settings(BaseSettings):
     liveavatar_sandbox: bool = True                    # set False in production
     liveavatar_video_quality: Literal["medium", "high"] = "medium"
     liveavatar_max_session_duration: int = 120        # seconds — Set to 120 to avoid long sessions.
+
+    # ── OpenAI Realtime non-sensitive config ───────────────────────────────
+    openai_realtime_model: str = "gpt-realtime-2025-08-28"
+    openai_realtime_voice: str = "alloy"
 
     # ── OpenAI TTS non-sensitive config ──────────────────────────────────────
     # OpenAI TTS produces 24 kHz / 16-bit / mono PCM when `response_format="pcm"`,

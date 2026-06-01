@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI
 
 from backend.infrastructure.adapters.driven.liveavatar.avatar_client import LiveAvatarClient
+from backend.infrastructure.adapters.driven.openai.openai_realtime_client import OpenAIRealtimeClient
 from backend.infrastructure.adapters.driven.openai.openai_tts_client import OpenAITTSClient
 from backend.infrastructure.adapters.driver.rest.avatar_controller import router as avatar_router
+from backend.infrastructure.adapters.driver.rest.realtime_controller import router as realtime_router
 from backend.infrastructure.adapters.driver.websocket.avatar_ws_handler import (
     router as avatar_ws_router,
 )
@@ -43,6 +45,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         default_model=settings.openai_tts_model,
         default_voice=settings.openai_tts_voice,
     )
+    app.state.openai_realtime_client = OpenAIRealtimeClient(
+        http_client=http_client,
+        api_key=settings.openai_api_key,
+    )
 
     try:
         yield
@@ -52,6 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 settings = get_settings()
+_is_prod = settings.environment == "production"
 
 app = FastAPI(
     title="Portfolio Backend",
@@ -61,8 +68,10 @@ app = FastAPI(
         "Provides LiveAvatar LITE mode session management and an OpenAI TTS endpoint "
         "that produces 24 kHz / 16-bit / mono PCM audio for the avatar's `agent.speak` WS frames."
     ),
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Disable interactive docs in production — no need to expose the API surface publicly.
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
     lifespan=lifespan,
 )
 
@@ -78,6 +87,7 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(avatar_router)
 app.include_router(avatar_ws_router)
+app.include_router(realtime_router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
