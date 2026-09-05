@@ -7,11 +7,13 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI
+from postgrest import AsyncPostgrestClient
 
 from backend.infrastructure.adapters.driven.liveavatar.avatar_client import LiveAvatarClient
 from backend.infrastructure.adapters.driven.openai.openai_realtime_client import OpenAIRealtimeClient
 from backend.infrastructure.adapters.driven.openai.openai_tts_client import OpenAITTSClient
 from backend.infrastructure.adapters.driver.rest.avatar_controller import router as avatar_router
+from backend.infrastructure.adapters.driver.rest.dashboard_controller import router as dashboard_router
 from backend.infrastructure.adapters.driver.rest.realtime_controller import router as realtime_router
 from backend.infrastructure.adapters.driver.websocket.avatar_ws_handler import (
     router as avatar_ws_router,
@@ -49,12 +51,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         http_client=http_client,
         api_key=settings.openai_api_key,
     )
+    app.state.postgrest_client = AsyncPostgrestClient(
+        base_url=settings.supabase_rest_url,
+        headers={
+            "apikey": settings.supabase_secret_key,
+            "Authorization": f"Bearer {settings.supabase_secret_key}",
+        },
+    )
 
     try:
         yield
     finally:
         await http_client.aclose()
         await openai_client.close()
+        await app.state.postgrest_client.aclose()
 
 
 settings = get_settings()
@@ -88,6 +98,7 @@ app.add_middleware(
 app.include_router(avatar_router)
 app.include_router(avatar_ws_router)
 app.include_router(realtime_router)
+app.include_router(dashboard_router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

@@ -41,6 +41,15 @@ Frontend
 
 **TTS flow:** Frontend sends text to `POST /api/avatar/speak`. Backend calls OpenAI TTS with `response_format=pcm` (24 kHz / 16-bit / mono) and returns base64-encoded audio. The frontend chunks this into <=1s frames and pushes them through the WebSocket.
 
+### Job Applications Dashboard
+Password-gated `/dashboard` sub-app (frontend) backed by a new `applications` bounded context here. Unlike `avatar`/`realtime`, this context is persistence-backed (Supabase via `postgrest-py`, service-role key only) and has a real domain aggregate (`JobApplication`) because status/stage transitions and soft-delete are actual invariants.
+
+- `domain/applications/identity.py` -- a line-for-line port of the original local tool's `lib/identity.js` matching algorithm (company + canonical title, not posting id, is a job's identity). Must not regress; see its parity tests.
+- `application/auth/` -- shared password + HS256 device token, per-IP/device lockout (`dashboard_login_attempts`).
+- `application/applications/` -- CRUD plus `ingest_batch`/`apply_liveness`/`annotate`, called by the CLI scripts in `profile/job-search/dashboard/` (outside this repo, gitignored-equivalent private tooling) via `X-Ingest-Key`.
+- Settings: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DASHBOARD_PASSWORD`, `DASHBOARD_TOKEN_SECRET`, `DASHBOARD_INGEST_KEY`, `DASHBOARD_TOKEN_DAYS`, `DASHBOARD_MAX_ATTEMPTS`, `DASHBOARD_LOCK_HOURS`.
+- See `docs/job-dashboard-plan.md` (meta-repo) for the full design.
+
 ### Planned: RAG Chatbot
 Visitors will be able to ask natural language questions about Richard's background. The system will use OpenAI embeddings + pgvector (Supabase) for semantic search over CV and project data, then GPT-4o-mini to generate grounded answers. **Not yet implemented.**
 
@@ -118,7 +127,7 @@ No DI framework. FastAPI `Depends()` factories live in `config/dependencies.py`.
 |---|---|---|
 | LiveAvatar | Animated avatar sessions | `LIVEAVATAR_API_KEY` |
 | OpenAI | TTS audio synthesis | `OPENAI_API_KEY` |
-| Supabase (planned) | pgvector for RAG | `SUPABASE_URL` / `SUPABASE_KEY` |
+| Supabase | Job dashboard persistence (live); pgvector for RAG (planned) | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` |
 
 ---
 
