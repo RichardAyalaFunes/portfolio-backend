@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     liveavatar_api_key_1: str = ""
     liveavatar_api_key_2: str = ""
     openai_api_key: str = "MISSING_OPENAI_KEY"
+    supabase_url: str = ""
+    supabase_secret_key: str = ""
+    dashboard_password: str = ""
+    dashboard_token_secret: str = ""
+    dashboard_ingest_key: str = ""
 
     @property
     def liveavatar_api_keys(self) -> list[str]:
@@ -67,6 +72,15 @@ class Settings(BaseSettings):
     # which matches LiveAvatar's `agent.speak` audio requirement exactly.
     openai_tts_model: str = "tts-1"                    # tts-1 (fast/cheap) or tts-1-hd
     openai_tts_voice: str = "alloy"                    # alloy, echo, fable, onyx, nova, shimmer
+
+    # ── Dashboard non-sensitive config ────────────────────────────────────────
+    dashboard_token_days: int = 30
+    dashboard_max_attempts: int = 10
+    dashboard_lock_hours: int = 24
+
+    @property
+    def supabase_rest_url(self) -> str:
+        return f"{self.supabase_url}/rest/v1"
 
     @property
     def frontend_origin(self) -> str:
