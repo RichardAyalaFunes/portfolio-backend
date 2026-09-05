@@ -189,6 +189,7 @@ class IngestResponseModel(BaseModel):
     added: int
     updated: int
     reposts: int
+    total: int
     near_hits: list[dict[str, Any]]
 
 

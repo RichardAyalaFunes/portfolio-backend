@@ -14,4 +14,5 @@ class IngestBatchResponse:
     added: int
     updated: int
     reposts: int
+    total: int
     near_hits: list[dict[str, Any]] = field(default_factory=list)
