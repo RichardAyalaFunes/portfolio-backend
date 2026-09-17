@@ -28,6 +28,8 @@ from backend.application.applications.enrich_role.port import IEnrichRoleUseCase
 from backend.application.applications.errors import DuplicateApplicationError
 from backend.application.applications.get_application.command import GetApplicationCommand
 from backend.application.applications.get_application.port import IGetApplicationUseCase
+from backend.application.applications.get_feedback.command import GetFeedbackCommand
+from backend.application.applications.get_feedback.port import IGetFeedbackUseCase
 from backend.application.applications.get_metrics.command import GetMetricsCommand
 from backend.application.applications.get_metrics.port import IGetMetricsUseCase
 from backend.application.applications.ingest_batch.command import IngestBatchCommand
@@ -53,6 +55,7 @@ from backend.infrastructure.config.dependencies import (
     get_archive_application_use_case,
     get_create_application_use_case,
     get_enrich_role_use_case,
+    get_feedback_use_case,
     get_get_application_use_case,
     get_ingest_batch_use_case,
     get_list_applications_use_case,
@@ -126,6 +129,10 @@ class ApplicationResponse(BaseModel):
     extras: dict[str, Any] = Field(default_factory=dict)
     contacts: list[dict[str, Any]] = Field(default_factory=list)
     application_form: dict[str, Any] = Field(default_factory=dict)
+    secondary_lanes: list[str] = Field(default_factory=list)
+    discovery_queries: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    reviewed_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -186,10 +193,24 @@ class RunResponse(BaseModel):
     notes: Optional[str] = None
     validated_account: Optional[str] = None
     browser_surface: Optional[str] = None
+    outcome: dict[str, Any] = Field(default_factory=dict)
+    line_yield: list[dict[str, Any]] = Field(default_factory=list)
+    plan_changes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RunListResponse(BaseModel):
     runs: list[RunResponse]
+
+
+class FeedbackResponseModel(BaseModel):
+    since: date
+    since_source: str
+    reviewed: list[dict[str, Any]]
+    summary: dict[str, Any]
+    query_performance: dict[str, dict[str, int]]
+    disagreements: dict[str, list[dict[str, Any]]]
+    backlog: dict[str, int]
+    recent_runs: list[dict[str, Any]]
 
 
 class IngestRequest(BaseModel):
@@ -443,6 +464,19 @@ async def list_runs(
 ) -> RunListResponse:
     runs = await repository.list_all()
     return RunListResponse(runs=[RunResponse(**run) for run in runs])
+
+
+@router.get("/feedback", response_model=FeedbackResponseModel, summary="Richard's review feedback since a date")
+async def get_feedback(
+    _device: CurrentDeviceDep,
+    use_case: Annotated[IGetFeedbackUseCase, Depends(get_feedback_use_case)],
+    since: Optional[date] = None,
+    recent_runs: int = 5,
+) -> FeedbackResponseModel:
+    """Read by the job-search agent as its first step. `since` defaults to the
+    latest recorded run's date, so each run sees what changed since the last one."""
+    result = await use_case.execute(GetFeedbackCommand(since=since, recent_runs=recent_runs))
+    return FeedbackResponseModel(**result.__dict__)
 
 
 # ── Ingest / liveness / annotate (X-Ingest-Key, called by the CLI scripts) ───

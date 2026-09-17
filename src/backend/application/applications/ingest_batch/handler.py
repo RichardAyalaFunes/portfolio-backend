@@ -11,6 +11,10 @@ domain.applications.identity:
   - "near" matches are still inserted as a brand-new row, tagged
     possible_duplicate_of in extras for later human review (dedupe.js's job).
   - no match -> brand-new row.
+  - search-feedback fields (secondary_lanes, discovery_queries, tags) are the
+    agent's own facts: discovery_queries are unioned on a fold so a line keeps
+    credit for every role it ever surfaced; secondary_lanes and tags are replaced
+    by the latest run that reports them. reviewed_at is never touched here.
 """
 
 import re
@@ -80,8 +84,40 @@ def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
     if not role.get("posted_date"):
         role["posted_date"], role["posted_date_source"] = _derive_posted_date(role.get("posted_relative"), role["run_date"])
 
+    role["secondary_lanes"] = _str_list(role.get("secondary_lanes"))
+    role["tags"] = [_slug(t) for t in _str_list(role.get("tags"))]
+    queries = _str_list(role.get("discovery_queries"))
+    if not queries and role.get("found_by_query"):
+        queries = [role["found_by_query"]]
+    role["discovery_queries"] = queries
+
     role["identity_key"] = identity.identity_key(role)
     return role
+
+
+def _str_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    seen: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text and text not in seen:
+            seen.append(text)
+    return seen
+
+
+def _slug(tag: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", tag.lower()).strip("_")
+
+
+def _feedback_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "secondary_lanes": raw["secondary_lanes"],
+        "discovery_queries": raw["discovery_queries"],
+        "tags": raw["tags"],
+    }
 
 
 def _as_posting(raw: dict[str, Any]) -> dict[str, Any]:
@@ -123,6 +159,7 @@ class IngestBatchHandler(IIngestBatchUseCase):
                     postings=[_as_posting(raw)],
                     first_seen=raw["run_date"],
                     last_seen=raw["run_date"],
+                    **_feedback_fields(raw),
                     **{f: raw.get(f) for f in FLAT_FIELDS},
                 )
                 created = await self._repository.create(application)
@@ -134,6 +171,11 @@ class IngestBatchHandler(IIngestBatchUseCase):
                 target = next(a for a in existing if str(a.id) == str(match.role["id"]))
                 is_new_posting = target.add_posting(_as_posting(raw))
                 target.last_seen = raw["run_date"]
+                target.add_discovery_queries(raw["discovery_queries"])
+                if "secondary_lanes" in incoming:
+                    target.secondary_lanes = raw["secondary_lanes"]
+                if "tags" in incoming:
+                    target.tags = raw["tags"]
                 if is_new_posting and match.kind == identity.MatchKind.EXACT:
                     reposts += 1
                 if command.replace:
@@ -157,6 +199,7 @@ class IngestBatchHandler(IIngestBatchUseCase):
                 first_seen=raw["run_date"],
                 last_seen=raw["run_date"],
                 extras={"possible_duplicate_of": str(match.role["id"])},
+                **_feedback_fields(raw),
                 **{f: raw.get(f) for f in FLAT_FIELDS},
             )
             created = await self._repository.create(application)

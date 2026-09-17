@@ -63,6 +63,10 @@ class JobApplication(AggregateRoot[ApplicationId]):
     extras: dict[str, Any] = field(default_factory=dict)
     contacts: list[dict[str, Any]] = field(default_factory=list)
     application_form: dict[str, Any] = field(default_factory=dict)
+    secondary_lanes: list[str] = field(default_factory=list)
+    discovery_queries: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    reviewed_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -87,6 +91,19 @@ class JobApplication(AggregateRoot[ApplicationId]):
 
     def set_stage(self, stage: Stage) -> None:
         self.application_stage = stage
+
+    def mark_reviewed(self) -> None:
+        """Richard gave feedback (status, stage or a note). Only the human paths call
+        this -- the dashboard PATCH and annotate -- never ingest, so GET /feedback can
+        tell his decisions apart from the agent's own writes."""
+        self.reviewed_at = datetime.now(tz=timezone.utc)
+
+    def add_discovery_queries(self, queries: list[str]) -> None:
+        """Union, keeping first-seen order: a role found again by another line keeps
+        the credit for every line that ever surfaced it."""
+        for query in queries:
+            if query and query not in self.discovery_queries:
+                self.discovery_queries.append(query)
 
     def add_posting(self, posting: dict[str, Any]) -> bool:
         """Append a posting if its id isn't already recorded. Returns True if added."""

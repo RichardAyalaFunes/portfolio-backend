@@ -67,6 +67,7 @@ class AnnotateHandler(IAnnotateUseCase):
             application.update_notes(
                 f"{application.notes} | {item.note}" if application.notes else item.note
             )
+            application.mark_reviewed()
             await self._repository.update(application)
             added += 1
 
