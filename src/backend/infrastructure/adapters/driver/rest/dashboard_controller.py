@@ -23,6 +23,8 @@ from backend.application.applications.archive_application.command import Archive
 from backend.application.applications.archive_application.port import IArchiveApplicationUseCase
 from backend.application.applications.create_application.command import CreateApplicationCommand
 from backend.application.applications.create_application.port import ICreateApplicationUseCase
+from backend.application.applications.enrich_role.command import EnrichRoleCommand, EnrichRoleItem
+from backend.application.applications.enrich_role.port import IEnrichRoleUseCase
 from backend.application.applications.errors import DuplicateApplicationError
 from backend.application.applications.get_application.command import GetApplicationCommand
 from backend.application.applications.get_application.port import IGetApplicationUseCase
@@ -35,6 +37,8 @@ from backend.application.applications.list_applications.port import IListApplica
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.application.applications.update_application.command import UpdateApplicationCommand
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
+from backend.application.applications.update_contact_stage.command import UpdateContactStageCommand
+from backend.application.applications.update_contact_stage.port import IUpdateContactStageUseCase
 from backend.application.auth.errors import AccountLockedError, InvalidPasswordError, InvalidTokenError
 from backend.application.auth.login.command import LoginCommand
 from backend.application.auth.login.port import ILoginUseCase
@@ -48,6 +52,7 @@ from backend.infrastructure.config.dependencies import (
     get_apply_liveness_use_case,
     get_archive_application_use_case,
     get_create_application_use_case,
+    get_enrich_role_use_case,
     get_get_application_use_case,
     get_ingest_batch_use_case,
     get_list_applications_use_case,
@@ -55,6 +60,7 @@ from backend.infrastructure.config.dependencies import (
     get_metrics_use_case,
     get_search_run_repository,
     get_update_application_use_case,
+    get_update_contact_stage_use_case,
     get_verify_token_use_case,
 )
 
@@ -118,6 +124,8 @@ class ApplicationResponse(BaseModel):
     notes_updated_at: Optional[date] = None
     postings: list[dict[str, Any]] = Field(default_factory=list)
     extras: dict[str, Any] = Field(default_factory=dict)
+    contacts: list[dict[str, Any]] = Field(default_factory=list)
+    application_form: dict[str, Any] = Field(default_factory=dict)
     archived_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -145,6 +153,10 @@ class UpdateApplicationRequest(BaseModel):
     stage: Optional[str] = None
     notes: Optional[str] = None
     jd_url: Optional[str] = None
+
+
+class UpdateContactStageRequest(BaseModel):
+    stage: str
 
 
 class ArchiveResponse(BaseModel):
@@ -218,6 +230,23 @@ class AnnotateRequest(BaseModel):
 class AnnotateResponseModel(BaseModel):
     added: int
     already_present: int
+    unmatched: list[str]
+
+
+class EnrichRequestItem(BaseModel):
+    application_id: Optional[str] = None
+    jd_url: Optional[str] = None
+    contacts: Optional[list[dict[str, Any]]] = None
+    application_form: Optional[dict[str, Any]] = None
+
+
+class EnrichRequest(BaseModel):
+    items: list[EnrichRequestItem]
+
+
+class EnrichResponseModel(BaseModel):
+    matched: int
+    updated: int
     unmatched: list[str]
 
 
@@ -364,6 +393,23 @@ async def update_application(
     return _to_response(result.application)
 
 
+@router.patch("/applications/{application_id}/contacts/{contact_id}", response_model=ApplicationResponse)
+async def update_contact_stage(
+    application_id: str,
+    contact_id: str,
+    body: UpdateContactStageRequest,
+    _device: CurrentDeviceDep,
+    use_case: Annotated[IUpdateContactStageUseCase, Depends(get_update_contact_stage_use_case)],
+) -> ApplicationResponse:
+    try:
+        result = await use_case.execute(
+            UpdateContactStageCommand(application_id=application_id, contact_id=contact_id, stage=body.stage)
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _to_response(result.application)
+
+
 @router.delete("/applications/{application_id}", response_model=ArchiveResponse)
 async def archive_application(
     application_id: str,
@@ -429,6 +475,27 @@ async def annotate(
         AnnotateCommand(items=[AnnotateItem(url=i.url, note=i.note) for i in body.items])
     )
     return AnnotateResponseModel(**result.__dict__)
+
+
+@router.post("/enrich", response_model=EnrichResponseModel, dependencies=[IngestAuthDep])
+async def enrich_role(
+    body: EnrichRequest,
+    use_case: Annotated[IEnrichRoleUseCase, Depends(get_enrich_role_use_case)],
+) -> EnrichResponseModel:
+    result = await use_case.execute(
+        EnrichRoleCommand(
+            items=[
+                EnrichRoleItem(
+                    application_id=i.application_id,
+                    jd_url=i.jd_url,
+                    contacts=i.contacts,
+                    application_form=i.application_form,
+                )
+                for i in body.items
+            ]
+        )
+    )
+    return EnrichResponseModel(**result.__dict__)
 
 
 @router.post("/runs", status_code=204, dependencies=[IngestAuthDep])

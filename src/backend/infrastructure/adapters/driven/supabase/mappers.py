@@ -47,6 +47,8 @@ def row_to_entity(row: dict[str, Any]) -> JobApplication:
         application_stage=Stage(row.get("application_stage") or Stage.NOT_APPLIED.value),
         postings=row.get("postings") or [],
         extras=row.get("extras") or {},
+        contacts=row.get("contacts") or [],
+        application_form=row.get("application_form") or {},
         **kwargs,
     )
 
@@ -70,6 +72,8 @@ def entity_to_row(application: JobApplication) -> dict[str, Any]:
             "application_stage": application.application_stage.value,
             "postings": application.postings,
             "extras": application.extras,
+            "contacts": application.contacts,
+            "application_form": application.application_form,
         }
     )
     return row

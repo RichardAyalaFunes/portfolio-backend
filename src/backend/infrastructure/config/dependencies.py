@@ -21,6 +21,8 @@ from backend.application.applications.archive_application.handler import Archive
 from backend.application.applications.archive_application.port import IArchiveApplicationUseCase
 from backend.application.applications.create_application.handler import CreateApplicationHandler
 from backend.application.applications.create_application.port import ICreateApplicationUseCase
+from backend.application.applications.enrich_role.handler import EnrichRoleHandler
+from backend.application.applications.enrich_role.port import IEnrichRoleUseCase
 from backend.application.applications.get_application.handler import GetApplicationHandler
 from backend.application.applications.get_application.port import IGetApplicationUseCase
 from backend.application.applications.get_metrics.handler import GetMetricsHandler
@@ -33,6 +35,8 @@ from backend.application.applications.ports.application_repository import IJobAp
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.application.applications.update_application.handler import UpdateApplicationHandler
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
+from backend.application.applications.update_contact_stage.handler import UpdateContactStageHandler
+from backend.application.applications.update_contact_stage.port import IUpdateContactStageUseCase
 from backend.application.auth.login.handler import LoginHandler
 from backend.application.auth.login.port import ILoginUseCase
 from backend.application.auth.ports.login_attempt_repository import ILoginAttemptRepository
@@ -191,6 +195,14 @@ def get_apply_liveness_use_case(repository: ApplicationRepositoryDep) -> IApplyL
 
 def get_annotate_use_case(repository: ApplicationRepositoryDep) -> IAnnotateUseCase:
     return AnnotateHandler(repository=repository)
+
+
+def get_enrich_role_use_case(repository: ApplicationRepositoryDep) -> IEnrichRoleUseCase:
+    return EnrichRoleHandler(repository=repository)
+
+
+def get_update_contact_stage_use_case(repository: ApplicationRepositoryDep) -> IUpdateContactStageUseCase:
+    return UpdateContactStageHandler(repository=repository)
 
 
 def get_metrics_use_case(repository: ApplicationRepositoryDep) -> IGetMetricsUseCase:
