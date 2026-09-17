@@ -25,6 +25,8 @@ from backend.application.applications.enrich_role.handler import EnrichRoleHandl
 from backend.application.applications.enrich_role.port import IEnrichRoleUseCase
 from backend.application.applications.get_application.handler import GetApplicationHandler
 from backend.application.applications.get_application.port import IGetApplicationUseCase
+from backend.application.applications.get_feedback.handler import GetFeedbackHandler
+from backend.application.applications.get_feedback.port import IGetFeedbackUseCase
 from backend.application.applications.get_metrics.handler import GetMetricsHandler
 from backend.application.applications.get_metrics.port import IGetMetricsUseCase
 from backend.application.applications.ingest_batch.handler import IngestBatchHandler
@@ -207,3 +209,10 @@ def get_update_contact_stage_use_case(repository: ApplicationRepositoryDep) -> I
 
 def get_metrics_use_case(repository: ApplicationRepositoryDep) -> IGetMetricsUseCase:
     return GetMetricsHandler(repository=repository)
+
+
+def get_feedback_use_case(
+    repository: ApplicationRepositoryDep,
+    run_repository: Annotated[ISearchRunRepository, Depends(get_search_run_repository)],
+) -> IGetFeedbackUseCase:
+    return GetFeedbackHandler(repository=repository, run_repository=run_repository)

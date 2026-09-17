@@ -27,6 +27,8 @@ class UpdateApplicationHandler(IUpdateApplicationUseCase):
             application.update_notes(command.notes)
         if command.jd_url is not None:
             application.jd_url = command.jd_url
+        if command.status is not None or command.stage is not None or command.notes is not None:
+            application.mark_reviewed()
 
         updated = await self._repository.update(application)
         return UpdateApplicationResponse(application=updated)

@@ -16,7 +16,8 @@ FLAT_FIELDS = (
     "work_remote_allowed", "drop_stage", "drop_reason", "notes",
 )
 DATE_FIELDS = ("posted_date", "run_date", "first_seen", "last_seen", "live_checked_at", "notes_updated_at")
-DATETIME_FIELDS = ("archived_at", "created_at", "updated_at")
+DATETIME_FIELDS = ("archived_at", "created_at", "updated_at", "reviewed_at")
+JSON_LIST_FIELDS = ("secondary_lanes", "discovery_queries", "tags")
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -37,6 +38,8 @@ def row_to_entity(row: dict[str, Any]) -> JobApplication:
         kwargs[f] = _parse_date(row.get(f))
     for f in DATETIME_FIELDS:
         kwargs[f] = _parse_datetime(row.get(f))
+    for f in JSON_LIST_FIELDS:
+        kwargs[f] = row.get(f) or []
 
     return JobApplication(
         id=ApplicationId.from_string(row["id"]),
@@ -61,6 +64,8 @@ def entity_to_row(application: JobApplication) -> dict[str, Any]:
     for f in DATETIME_FIELDS:
         value = getattr(application, f)
         row[f] = value.isoformat() if isinstance(value, datetime) else value
+    for f in JSON_LIST_FIELDS:
+        row[f] = getattr(application, f)
 
     row.update(
         {

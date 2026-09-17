@@ -47,6 +47,7 @@ Password-gated `/dashboard` sub-app (frontend) backed by a new `applications` bo
 - `domain/applications/identity.py` -- a line-for-line port of the original local tool's `lib/identity.js` matching algorithm (company + canonical title, not posting id, is a job's identity). Must not regress; see its parity tests.
 - `application/auth/` -- shared password + HS256 device token, per-IP/device lockout (`dashboard_login_attempts`).
 - `application/applications/` -- CRUD plus `ingest_batch`/`apply_liveness`/`annotate`, called by the CLI scripts in `profile/job-search/dashboard/` (outside this repo, gitignored-equivalent private tooling) via `X-Ingest-Key`.
+- `application/applications/get_feedback/` -- `GET /api/dashboard/feedback?since=` (Bearer). The job-search agent's first read on every run: roles Richard reviewed since the latest run, all-time verdicts per search line (`discovery_queries`), score-vs-verdict disagreements, and recent runs' `outcome`/`line_yield`/`plan_changes`. `reviewed_at` is set only by the human paths (dashboard PATCH of status/stage/notes, and annotate), never by ingest. Schema: `scripts/sql/003_search_feedback_loop.sql`, which must be applied before deploying code that reads it.
 - Settings: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DASHBOARD_PASSWORD`, `DASHBOARD_TOKEN_SECRET`, `DASHBOARD_INGEST_KEY`, `DASHBOARD_TOKEN_DAYS`, `DASHBOARD_MAX_ATTEMPTS`, `DASHBOARD_LOCK_HOURS`.
 - See `docs/job-dashboard-plan.md` (meta-repo) for the full design.
 
