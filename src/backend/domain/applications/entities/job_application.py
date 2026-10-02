@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from ...shared.base_entity import AggregateRoot
-from ..value_objects import ApplicationId, Stage, Status
+from ..value_objects import APPLIED_STAGES, DEAD_POSTING_STATES, ApplicationId, Stage, Status
 
 
 @dataclass
@@ -75,6 +75,35 @@ class JobApplication(AggregateRoot[ApplicationId]):
     @property
     def is_archived(self) -> bool:
         return self.archived_at is not None
+
+    @property
+    def has_applied(self) -> bool:
+        """Any stage after "Not applied", the closed end of the track included."""
+        return self.application_stage in APPLIED_STAGES
+
+    @property
+    def posting_is_dead(self) -> bool:
+        """The liveness sweep found the posting closed, suspended or gone."""
+        return self.live_state in DEAD_POSTING_STATES
+
+    @property
+    def is_below_bar(self) -> bool:
+        """The agent scored the role and it landed under the pass bar, as opposed to a
+        gate cutting it before it was scored."""
+        return self.drop_stage == "scored" or self.drop_reason == "below_bar"
+
+    @property
+    def awaits_review(self) -> bool:
+        """Waiting for Richard's first look: no verdict, not applied, the posting is
+        still open and the agent did not score it under the bar. The dashboard queue's
+        "To review" bucket is this same rule (frontend queueBuckets.ts); the metrics and
+        rules counters use this one so the numbers agree."""
+        return (
+            self.status == Status.TO_VALIDATE
+            and self.application_stage == Stage.NOT_APPLIED
+            and not self.posting_is_dead
+            and not self.is_below_bar
+        )
 
     def archive(self) -> None:
         """Soft delete -- row is hidden but kept for history and dedupe."""

@@ -109,6 +109,23 @@ async def test_update_writes_the_skill_match_column():
 
 
 @pytest.mark.asyncio
+async def test_save_skill_match_patches_that_one_column_and_nothing_else():
+    application = make_application(notes="written by Richard", group="ai_engineer")
+    application.set_skill_match(normalize_skill_match(skill_match_payload()))
+    recorder = Recorder([entity_to_row(application)])
+
+    result = await SupabaseJobApplicationRepository(postgrest(recorder)).save_skill_match(application)
+
+    request = recorder.only
+    assert result is None
+    assert request.method == "PATCH"
+    assert request.url.path == "/rest/v1/job_applications"
+    assert request.url.params["id"] == f"eq.{application.id}"
+    # Only the skill table travels: no status, stage or note that could overwrite his edits.
+    assert json.loads(request.content) == {"skill_match": application.skill_match}
+
+
+@pytest.mark.asyncio
 async def test_list_reads_the_skill_match_column_and_defaults_it_for_older_rows():
     analysed = make_application()
     analysed.set_skill_match(normalize_skill_match(skill_match_payload()))

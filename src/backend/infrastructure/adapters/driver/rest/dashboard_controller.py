@@ -187,6 +187,7 @@ class ArchiveResponse(BaseModel):
 
 class MetricsResponseModel(BaseModel):
     total: int
+    to_review: int = 0
     status_counts: dict[str, int]
     stage_counts: dict[str, int]
     funnel_by_group: dict[str, dict[str, int]]
@@ -290,7 +291,9 @@ class SkillMatchRequestItem(BaseModel):
     jd_url: Optional[str] = None
     # Required but nullable: an explicit null (or {}) clears the role's table, while a
     # missing key is a 422 -- an item that forgot its payload must not wipe a table.
-    skill_match: Optional[dict[str, Any]]
+    # Typed Any on purpose: a payload that is not an object is that one item's problem
+    # (reported under `invalid`), not a reason to reject the whole batch.
+    skill_match: Any
 
 
 class SkillMatchRequest(BaseModel):

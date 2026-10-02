@@ -91,3 +91,11 @@ class SupabaseJobApplicationRepository(IJobApplicationRepository):
             await self._client.table(TABLE).update(row).eq("id", str(application.id)).execute()
         )
         return row_to_entity(response.data[0])
+
+    async def save_skill_match(self, application: JobApplication) -> None:
+        await (
+            self._client.table(TABLE)
+            .update({"skill_match": application.skill_match})
+            .eq("id", str(application.id))
+            .execute()
+        )

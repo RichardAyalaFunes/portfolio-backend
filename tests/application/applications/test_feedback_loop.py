@@ -42,6 +42,9 @@ class FakeApplicationRepository(IJobApplicationRepository):
         self.rows[str(application.id)] = copy.deepcopy(application)
         return copy.deepcopy(application)
 
+    async def save_skill_match(self, application):
+        self.rows[str(application.id)].skill_match = copy.deepcopy(application.skill_match)
+
 
 class FakeRunRepository(ISearchRunRepository):
     def __init__(self, runs=None) -> None:

@@ -226,9 +226,11 @@ def roles_for_line_stats():
         make_application(
             discovery_queries=["line B"], status=Status.COLD, application_stage=Stage.INTERVIEWING
         ),
-        # Closed is not an advanced stage: approved by status, but not "applied".
+        # Closed is the end of the application track: he did apply, so it counts as applied.
         make_application(discovery_queries=["line B"], status=Status.APPROVED, application_stage=Stage.CLOSED),
         make_application(discovery_queries=["line B"], status=Status.FLAGGED, application_stage=Stage.OFFER),
+        # ...even if the stored status says Rejected: that is a company's no, not a role he turned down.
+        make_application(discovery_queries=["line E"], status=Status.REJECTED, application_stage=Stage.CLOSED),
         # Archived roles still count for the line that found them.
         make_application(discovery_queries=["line A"], status=Status.REJECTED, archived_at=NOW),
         make_application(discovery_queries=["line D"], status=Status.DROPPED),
@@ -238,9 +240,10 @@ def roles_for_line_stats():
 def test_line_stats_arithmetic_over_hand_built_roles():
     assert line_stats(roles_for_line_stats()) == {
         "line A": {"surfaced": 4, "approved": 2, "rejected": 2, "applied": 1},
-        "line B": {"surfaced": 4, "approved": 4, "rejected": 0, "applied": 2},
+        "line B": {"surfaced": 4, "approved": 4, "rejected": 0, "applied": 3},
         "line C": {"surfaced": 1, "approved": 0, "rejected": 0, "applied": 0},
         "line D": {"surfaced": 1, "approved": 0, "rejected": 0, "applied": 0},
+        "line E": {"surfaced": 1, "approved": 1, "rejected": 0, "applied": 1},
     }
 
 
@@ -280,7 +283,7 @@ def roles_for_lane_stats():
         make_application(status=Status.APPROVED, **ai),                                             # approved
         make_application(status=Status.REJECTED, **ai),                                             # rejected
         make_application(status=Status.REJECTED, application_stage=Stage.INTERVIEWING, **ai),      # approved, applied
-        make_application(status=Status.TO_VALIDATE, application_stage=Stage.CLOSED, **ai),         # total only
+        make_application(status=Status.TO_VALIDATE, application_stage=Stage.CLOSED, **ai),         # approved, applied
         make_application(status=Status.DROPPED, **ai),                                              # total only
         make_application(status=Status.COLD, **ai),                                                 # total only
         make_application(status=Status.TO_VALIDATE, archived_at=NOW, **ai),                         # skipped
@@ -293,10 +296,28 @@ def roles_for_lane_stats():
 
 def test_lane_stats_arithmetic_over_hand_built_roles():
     assert lane_stats(roles_for_lane_stats()) == {
-        "ai_engineer": {"total": 10, "to_review": 2, "flagged": 1, "approved": 3, "applied": 2, "rejected": 1},
+        "ai_engineer": {"total": 10, "to_review": 2, "flagged": 1, "approved": 4, "applied": 3, "rejected": 1},
         "founding_engineer": {"total": 2, "to_review": 1, "flagged": 0, "approved": 1, "applied": 1, "rejected": 0},
         "unknown": {"total": 2, "to_review": 1, "flagged": 0, "approved": 0, "applied": 0, "rejected": 1},
     }
+
+
+def test_lane_stats_to_review_and_flagged_follow_the_queue_rule_so_both_show_the_same_number():
+    ai = {"group": "ai_engineer"}
+    roles = [
+        make_application(status=Status.TO_VALIDATE, **ai),                                          # waiting
+        make_application(status=Status.TO_VALIDATE, live_state="LISTED", **ai),                     # waiting
+        make_application(status=Status.TO_VALIDATE, live_state="UNVERIFIABLE", **ai),               # unknown counts as open
+        make_application(status=Status.TO_VALIDATE, live_state="CLOSED", **ai),                     # the queue: No longer open
+        make_application(status=Status.TO_VALIDATE, live_state="GONE", **ai),                       # the queue: No longer open
+        make_application(status=Status.TO_VALIDATE, drop_stage="scored", drop_reason="below_bar", **ai),  # Didn't pass
+        make_application(status=Status.FLAGGED, **ai),                                              # flagged
+        make_application(status=Status.FLAGGED, live_state="SUSPENDED", **ai),                      # No longer open
+    ]
+
+    stats = lane_stats(roles)["ai_engineer"]
+
+    assert (stats["total"], stats["to_review"], stats["flagged"]) == (8, 3, 1)
 
 
 def test_lane_stats_carries_all_six_counters_in_order():

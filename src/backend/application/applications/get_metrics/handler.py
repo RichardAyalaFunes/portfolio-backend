@@ -60,6 +60,7 @@ class GetMetricsHandler(IGetMetricsUseCase):
 
         return MetricsResponse(
             total=len(applications),
+            to_review=sum(1 for a in applications if a.awaits_review),
             status_counts=dict(status_counts),
             stage_counts=dict(stage_counts),
             funnel_by_group={group: dict(counts) for group, counts in funnel_by_group.items()},
