@@ -355,7 +355,7 @@ def contacts_for(slug: str, company: str, *, sent_first: bool = False) -> list[d
                     f"Hi {name.split()[0]}, I saw the opening at {company} and the work on retrieval-backed "
                     "products caught my eye. Happy to share a short summary of what I have shipped if useful."
                 ),
-                "outreach_stage": "Sent" if (sent_first and rank == 1) else None,
+                "outreach_stage": "sent" if (sent_first and rank == 1) else "not_contacted",
                 "outreach_stage_updated_at": days_ago(2).isoformat() if (sent_first and rank == 1) else None,
                 "source": "company_team_page",
                 "found_at": days_ago(1).isoformat(),
