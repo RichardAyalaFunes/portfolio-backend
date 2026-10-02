@@ -10,13 +10,12 @@ human decision.
 from datetime import date
 
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
-from backend.domain.applications.value_objects import Status
+from backend.domain.applications.value_objects import DEAD_POSTING_STATES, Status
 
 from .command import ApplyLivenessCommand
 from .port import IApplyLivenessUseCase
 from .response import ApplyLivenessResponse
 
-_DEAD_STATES = {"CLOSED", "SUSPENDED", "GONE"}
 _AUTO_RETIRE_FROM = {Status.TO_VALIDATE, Status.FLAGGED}
 
 
@@ -63,7 +62,7 @@ class ApplyLivenessHandler(IApplyLivenessUseCase):
                     application.work_mode = "On-site / hybrid (LinkedIn workplace tag)"
                     work_mode_corrected += 1
 
-            if info.get("state") in _DEAD_STATES:
+            if info.get("state") in DEAD_POSTING_STATES:
                 if application.status in _AUTO_RETIRE_FROM:
                     application.extras["status_previous"] = application.status.value
                     application.extras["cold_reason"] = f"posting closed (verified {today})"

@@ -17,11 +17,11 @@ Aggregation is in Python over the in-memory working set, same as GetMetrics.
 
 from collections import defaultdict
 
-from backend.application.applications.get_feedback.handler import _ADVANCED_STAGES, query_performance
+from backend.application.applications.get_feedback.handler import query_performance
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
 from backend.application.applications.ports.search_rules_repository import ISearchRulesRepository
 from backend.domain.applications.entities.job_application import JobApplication
-from backend.domain.applications.value_objects import Stage, Status
+from backend.domain.applications.value_objects import Status
 
 from .command import GetRulesCommand
 from .port import IGetRulesUseCase
@@ -34,35 +34,35 @@ UNKNOWN_LANE = "unknown"
 
 def line_stats(applications: list[JobApplication]) -> dict[str, dict[str, int]]:
     """Per search line: surfaced / approved / rejected / applied. `approved` is status
-    Approved OR an advanced stage (Applied, Interviewing, Offer); `rejected` is status
-    Rejected on a role that never advanced; `applied` is an advanced stage. A role with
-    no discovery_queries counts under its found_by_query, if it has one."""
+    Approved OR an application stage (Applied, Interviewing, Offer, Closed); `rejected`
+    is status Rejected on a role never applied to; `applied` is an application stage. A
+    role with no discovery_queries counts under its found_by_query, if it has one."""
     performance = query_performance(applications)
     return {line: {key: counts.get(key, 0) for key in LINE_COUNTERS} for line, counts in performance.items()}
 
 
 def lane_stats(applications: list[JobApplication]) -> dict[str, dict[str, int]]:
-    """Per lane, over live (non-archived) roles. `to_review` and `flagged` only count
-    roles not yet applied to; `approved` and `applied` use the same advanced-stage
-    rule as line_stats."""
+    """Per lane, over live (non-archived) roles. `to_review` is the queue's "To review"
+    rule (JobApplication.awaits_review), so this card and the queue show the same number;
+    `flagged` is a Flagged role not yet applied to whose posting is still open;
+    `approved` and `applied` use the same application-stage rule as line_stats."""
     table: dict[str, dict[str, int]] = defaultdict(lambda: {key: 0 for key in LANE_COUNTERS})
     for application in applications:
         if application.is_archived:
             continue
         row = table[application.group or UNKNOWN_LANE]
-        advanced = application.application_stage in _ADVANCED_STAGES
-        not_applied = application.application_stage == Stage.NOT_APPLIED
+        applied = application.has_applied
 
         row["total"] += 1
-        if application.status == Status.TO_VALIDATE and not_applied:
+        if application.awaits_review:
             row["to_review"] += 1
-        if application.status == Status.FLAGGED and not_applied:
+        if application.status == Status.FLAGGED and not applied and not application.posting_is_dead:
             row["flagged"] += 1
-        if application.status == Status.APPROVED or advanced:
+        if application.status == Status.APPROVED or applied:
             row["approved"] += 1
-        if advanced:
+        if applied:
             row["applied"] += 1
-        if application.status == Status.REJECTED and not advanced:
+        if application.status == Status.REJECTED and not applied:
             row["rejected"] += 1
     return {lane: dict(counts) for lane, counts in sorted(table.items())}
 

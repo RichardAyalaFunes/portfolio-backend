@@ -52,3 +52,12 @@ class Stage(str, Enum):
     INTERVIEWING = "Interviewing"
     OFFER = "Offer"
     CLOSED = "Closed"
+
+
+# Every stage after "Not applied": the application was sent. Closed is the end of that
+# track (the process is over), so a closed application still counts as one he made.
+APPLIED_STAGES = (Stage.APPLIED, Stage.INTERVIEWING, Stage.OFFER, Stage.CLOSED)
+
+# What the liveness sweep reports for a posting that no longer takes applications.
+# Anything else (LISTED, UNVERIFIABLE, never checked) counts as open.
+DEAD_POSTING_STATES = frozenset({"CLOSED", "SUSPENDED", "GONE"})

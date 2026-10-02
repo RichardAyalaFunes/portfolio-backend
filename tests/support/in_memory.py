@@ -122,6 +122,15 @@ class InMemoryApplicationRepository(IJobApplicationRepository):
         self._rows[key] = row
         return row_to_entity(copy.deepcopy(row))
 
+    async def save_skill_match(self, application: JobApplication) -> None:
+        key = str(application.id)
+        stored = self._rows.get(key)
+        if stored is None:
+            raise LookupError(f"no job_applications row {key}")
+        # Only this column travels, like the real PATCH; every other column stays as stored.
+        stored["skill_match"] = copy.deepcopy(entity_to_row(application)["skill_match"])
+        stored["updated_at"] = _now()
+
 
 class InMemoryRunRepository(ISearchRunRepository):
     def __init__(self, runs: Optional[Iterable[dict[str, Any]]] = None) -> None:

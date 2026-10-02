@@ -21,7 +21,7 @@ from typing import Any
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.domain.applications.entities.job_application import JobApplication
-from backend.domain.applications.value_objects import Stage, Status
+from backend.domain.applications.value_objects import Status
 
 from .command import GetFeedbackCommand
 from .port import IGetFeedbackUseCase
@@ -30,7 +30,6 @@ from .response import FeedbackResponse
 DEFAULT_WINDOW_DAYS = 30
 PASS_BAR = 75
 HIGH_SCORE = 85
-_ADVANCED_STAGES = (Stage.APPLIED, Stage.INTERVIEWING, Stage.OFFER)
 _RUN_FIELDS = (
     "run_date", "label", "cards_surfaced", "jd_extracted", "portals", "notes",
     "outcome", "line_yield", "plan_changes",
@@ -79,10 +78,11 @@ def _queries_of(application: JobApplication) -> list[str]:
 
 def query_performance(applications: list[JobApplication]) -> dict[str, dict[str, int]]:
     """Per search line: roles it surfaced and Richard's verdicts on them.
-    A role he applied to counts as approved even if its status was never moved."""
+    A role he applied to counts as approved even if its status was never moved, and a
+    role whose application has since closed is still one he applied to."""
     table: dict[str, Counter[str]] = defaultdict(Counter)
     for application in applications:
-        advanced = application.application_stage in _ADVANCED_STAGES
+        advanced = application.has_applied
         for query in _queries_of(application):
             row = table[query]
             row["surfaced"] += 1
@@ -155,7 +155,7 @@ class GetFeedbackHandler(IGetFeedbackUseCase):
         judged = [
             a for a in applications
             if a.reviewed_at or a.status in (Status.APPROVED, Status.REJECTED)
-            or a.application_stage in _ADVANCED_STAGES
+            or a.has_applied
         ]
         live = [a for a in applications if not a.is_archived]
 

@@ -8,6 +8,10 @@ Per item: resolve the role (`application_id`, then `jd_url`), then validate and
 normalise the payload. One bad item never sinks the batch: an unresolvable item goes
 to `unmatched`, an item whose payload fails validation goes to `invalid` with the
 reason, and the others still apply. `skill_match` None or {} clears the table.
+
+The write touches the skill_match column only (save_skill_match), never the whole row:
+the roles were read once at the start, and a batch can run for a while, during which
+Richard may save a status, stage or note on one of them in the dashboard.
 """
 
 from typing import Any
@@ -55,7 +59,7 @@ class AttachSkillMatchHandler(IAttachSkillMatchUseCase):
                 continue
 
             application.set_skill_match(payload)
-            await self._repository.update(application)
+            await self._repository.save_skill_match(application)
             updated += 1
 
         return AttachSkillMatchResponse(matched=matched, updated=updated, unmatched=unmatched, invalid=invalid)

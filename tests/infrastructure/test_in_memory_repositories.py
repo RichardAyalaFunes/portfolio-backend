@@ -124,6 +124,27 @@ async def test_create_and_update_stamp_the_timestamps_the_database_would():
 
 
 @pytest.mark.asyncio
+async def test_save_skill_match_writes_only_that_column_like_the_real_patch():
+    repo = InMemoryApplicationRepository()
+    stored = make_application(notes="as stored", status=Status.APPROVED)
+    repo.add(stored)
+
+    stale = await repo.get(stored.id)  # what a long batch holds on to
+    stale.notes = "stale copy"
+    stale.set_status(Status.TO_VALIDATE)
+    stale.set_skill_match({"verdict": "new table"})
+    await repo.save_skill_match(stale)
+
+    after = repo.by_id(str(stored.id))
+    assert after.skill_match == {"verdict": "new table"}
+    assert (after.notes, after.status) == ("as stored", Status.APPROVED)  # the stale columns were not sent
+    assert after.updated_at is not None
+
+    with pytest.raises(LookupError):
+        await repo.save_skill_match(make_application())
+
+
+@pytest.mark.asyncio
 async def test_create_refuses_a_duplicate_identity_key_and_update_needs_an_existing_row():
     repo = InMemoryApplicationRepository()
     await repo.create(make_application(identity_key="acme::engineer"))

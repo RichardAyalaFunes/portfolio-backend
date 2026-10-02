@@ -15,7 +15,8 @@ from typing import Any, Optional
 class AttachSkillMatchItem:
     application_id: Optional[str] = None
     jd_url: Optional[str] = None
-    skill_match: Optional[dict[str, Any]] = None
+    # Whatever the agent sent: an object, None/{} to clear, or garbage the handler reports.
+    skill_match: Any = None
 
 
 @dataclass(frozen=True)

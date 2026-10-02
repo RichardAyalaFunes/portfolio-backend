@@ -15,7 +15,7 @@ from backend.application.applications.attach_skill_match.handler import AttachSk
 from backend.application.applications.ingest_batch.command import IngestBatchCommand
 from backend.application.applications.ingest_batch.handler import IngestBatchHandler
 from backend.domain.applications.skill_match import normalize_skill_match
-from backend.domain.applications.value_objects import Status
+from backend.domain.applications.value_objects import Stage, Status
 from tests.support.builders import make_application, skill_match_payload, skill_match_row
 from tests.support.in_memory import InMemoryApplicationRepository
 
@@ -306,6 +306,54 @@ async def test_a_second_write_replaces_the_first_wholesale():
 
 
 # -- invariants with the rest of the system ---------------------------------------
+
+
+class OwnerSavesMidBatch(InMemoryApplicationRepository):
+    """Richard saves a role in the dashboard while the agent's batch is still running:
+    after the first skill match is written, before the second is."""
+
+    def __init__(self, target_id) -> None:
+        super().__init__()
+        self._target_id = target_id
+        self._fired = False
+
+    async def save_skill_match(self, application) -> None:
+        await super().save_skill_match(application)
+        if self._fired:
+            return
+        self._fired = True
+        in_the_dashboard = await self.get(self._target_id)
+        in_the_dashboard.set_status(Status.APPROVED)
+        in_the_dashboard.set_stage(Stage.APPLIED)
+        in_the_dashboard.update_notes("Sent the application today")
+        in_the_dashboard.mark_reviewed()
+        await self.update(in_the_dashboard)
+
+
+@pytest.mark.asyncio
+async def test_a_review_saved_while_the_batch_runs_is_not_reverted_by_a_later_item():
+    first, second = make_application(), make_application()
+    repo = OwnerSavesMidBatch(second.id)
+    repo.add(first, second)
+
+    result = await attach(
+        repo,
+        item(skill_match_payload(verdict="first"), application_id=str(first.id)),
+        item(skill_match_payload(verdict="second"), application_id=str(second.id)),
+    )
+
+    assert (result.matched, result.updated) == (2, 2)
+    saved = repo.by_id(str(second.id))
+    # His edit survived the write that came after it...
+    assert (saved.status, saved.application_stage, saved.notes) == (
+        Status.APPROVED,
+        Stage.APPLIED,
+        "Sent the application today",
+    )
+    assert saved.reviewed_at is not None
+    # ...and the agent's table landed anyway.
+    assert saved.skill_match["verdict"] == "second"
+    assert repo.by_id(str(first.id)).skill_match["verdict"] == "first"
 
 
 @pytest.mark.asyncio

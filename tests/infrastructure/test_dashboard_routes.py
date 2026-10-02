@@ -291,16 +291,30 @@ def test_post_skill_match_requires_the_skill_match_key_so_a_forgotten_payload_ca
     assert api.applications.by_id(str(target.id)).skill_match["rows"]
 
 
-def test_post_skill_match_rejects_a_payload_that_is_not_an_object_at_the_boundary(api):
-    target = analysed_role(api)
+def test_post_skill_match_reports_a_payload_that_is_not_an_object_without_failing_the_batch(api):
+    broken = analysed_role(api)
+    good = make_application(group="ai_engineer")
+    api.applications.add(good)
+    kept = api.applications.by_id(str(broken.id)).skill_match
 
     response = api.client.post(
         f"{BASE}/skill-match",
         headers=INGEST,
-        json={"items": [{"application_id": str(target.id), "skill_match": "not an object"}]},
+        json={
+            "items": [
+                {"application_id": str(broken.id), "skill_match": "not an object"},
+                {"application_id": str(good.id), "skill_match": skill_match_payload(verdict="still applied")},
+                {"application_id": str(broken.id), "skill_match": ["a", "list"]},
+            ]
+        },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["matched"], body["updated"], body["unmatched"]) == (3, 1, [])
+    assert body["invalid"] == [f"{broken.id}: skill_match must be an object"] * 2
+    assert api.applications.by_id(str(broken.id)).skill_match == kept  # the old table is left alone
+    assert api.applications.by_id(str(good.id)).skill_match["verdict"] == "still applied"
 
 
 # -- the other writers keep the table ----------------------------------------------

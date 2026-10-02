@@ -46,3 +46,12 @@ class IJobApplicationRepository(ABC):
     @abstractmethod
     async def update(self, application: JobApplication) -> JobApplication:
         """Full update of an existing row, keyed by application.id."""
+
+    @abstractmethod
+    async def save_skill_match(self, application: JobApplication) -> None:
+        """Write ONLY the skill_match column of an existing row, keyed by application.id.
+
+        For the agent's batch writer. update() rewrites every column from the entity the
+        caller read earlier, so over a long batch it would revert a status, stage or note
+        Richard saved in the dashboard after that read. This one cannot: the other columns
+        are never sent."""
