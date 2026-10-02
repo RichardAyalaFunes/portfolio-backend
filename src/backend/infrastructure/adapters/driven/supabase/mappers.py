@@ -52,6 +52,7 @@ def row_to_entity(row: dict[str, Any]) -> JobApplication:
         extras=row.get("extras") or {},
         contacts=row.get("contacts") or [],
         application_form=row.get("application_form") or {},
+        skill_match=row.get("skill_match") or {},
         **kwargs,
     )
 
@@ -79,6 +80,7 @@ def entity_to_row(application: JobApplication) -> dict[str, Any]:
             "extras": application.extras,
             "contacts": application.contacts,
             "application_form": application.application_form,
+            "skill_match": application.skill_match,
         }
     )
     return row

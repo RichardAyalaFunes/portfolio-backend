@@ -4,8 +4,9 @@ Dashboard REST controller -- driver adapter (inbound).
 Two auth schemes on this router:
   - Bearer <device token> (HS256, see application.auth) on every /api/dashboard/*
     route except /auth/login.
-  - X-Ingest-Key on the four routes the CLI scripts call (ingest.js,
-    apply-liveness.js, annotate.js, and run metadata upload) -- a script isn't
+  - X-Ingest-Key on the routes the CLI scripts call (ingest.js,
+    apply-liveness.js, annotate.js, enrich, run metadata upload, and the
+    job-search agent's skill-match and search-rules publishing) -- a script isn't
     a "device" and doesn't go through the password gate.
 """
 
@@ -21,6 +22,11 @@ from backend.application.applications.apply_liveness.command import ApplyLivenes
 from backend.application.applications.apply_liveness.port import IApplyLivenessUseCase
 from backend.application.applications.archive_application.command import ArchiveApplicationCommand
 from backend.application.applications.archive_application.port import IArchiveApplicationUseCase
+from backend.application.applications.attach_skill_match.command import (
+    AttachSkillMatchCommand,
+    AttachSkillMatchItem,
+)
+from backend.application.applications.attach_skill_match.port import IAttachSkillMatchUseCase
 from backend.application.applications.create_application.command import CreateApplicationCommand
 from backend.application.applications.create_application.port import ICreateApplicationUseCase
 from backend.application.applications.enrich_role.command import EnrichRoleCommand, EnrichRoleItem
@@ -32,11 +38,15 @@ from backend.application.applications.get_feedback.command import GetFeedbackCom
 from backend.application.applications.get_feedback.port import IGetFeedbackUseCase
 from backend.application.applications.get_metrics.command import GetMetricsCommand
 from backend.application.applications.get_metrics.port import IGetMetricsUseCase
+from backend.application.applications.get_rules.command import GetRulesCommand
+from backend.application.applications.get_rules.port import IGetRulesUseCase
 from backend.application.applications.ingest_batch.command import IngestBatchCommand
 from backend.application.applications.ingest_batch.port import IIngestBatchUseCase
 from backend.application.applications.list_applications.command import ListApplicationsCommand
 from backend.application.applications.list_applications.port import IListApplicationsUseCase
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
+from backend.application.applications.publish_rules.command import PublishRulesCommand
+from backend.application.applications.publish_rules.port import IPublishRulesUseCase
 from backend.application.applications.update_application.command import UpdateApplicationCommand
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
 from backend.application.applications.update_contact_stage.command import UpdateContactStageCommand
@@ -47,20 +57,23 @@ from backend.application.auth.login.port import ILoginUseCase
 from backend.application.auth.verify_token.command import VerifyTokenCommand
 from backend.application.auth.verify_token.port import IVerifyTokenUseCase
 from backend.domain.applications.entities.job_application import JobApplication
-from backend.domain.shared.errors import NotFoundError
+from backend.domain.shared.errors import InvalidValueError, NotFoundError
 from backend.infrastructure.config.dependencies import (
     SettingsDep,
     get_annotate_use_case,
     get_apply_liveness_use_case,
     get_archive_application_use_case,
+    get_attach_skill_match_use_case,
     get_create_application_use_case,
     get_enrich_role_use_case,
     get_feedback_use_case,
     get_get_application_use_case,
+    get_get_rules_use_case,
     get_ingest_batch_use_case,
     get_list_applications_use_case,
     get_login_use_case,
     get_metrics_use_case,
+    get_publish_rules_use_case,
     get_search_run_repository,
     get_update_application_use_case,
     get_update_contact_stage_use_case,
@@ -129,6 +142,7 @@ class ApplicationResponse(BaseModel):
     extras: dict[str, Any] = Field(default_factory=dict)
     contacts: list[dict[str, Any]] = Field(default_factory=list)
     application_form: dict[str, Any] = Field(default_factory=dict)
+    skill_match: dict[str, Any] = Field(default_factory=dict)
     secondary_lanes: list[str] = Field(default_factory=list)
     discovery_queries: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
@@ -271,8 +285,50 @@ class EnrichResponseModel(BaseModel):
     unmatched: list[str]
 
 
-def _to_response(application: JobApplication) -> ApplicationResponse:
-    return ApplicationResponse.model_validate(application)
+class SkillMatchRequestItem(BaseModel):
+    application_id: Optional[str] = None
+    jd_url: Optional[str] = None
+    # Required but nullable: an explicit null (or {}) clears the role's table, while a
+    # missing key is a 422 -- an item that forgot its payload must not wipe a table.
+    skill_match: Optional[dict[str, Any]]
+
+
+class SkillMatchRequest(BaseModel):
+    items: list[SkillMatchRequestItem]
+
+
+class SkillMatchResponseModel(BaseModel):
+    matched: int
+    updated: int
+    unmatched: list[str]
+    invalid: list[str]
+
+
+class PublishRulesRequest(BaseModel):
+    rules: dict[str, Any]
+
+
+class PublishRulesResponseModel(BaseModel):
+    published_at: str
+    lanes: int
+    lines: int
+
+
+class RulesResponseModel(BaseModel):
+    published_at: Optional[str] = None
+    content: Optional[dict[str, Any]] = None
+    line_stats: dict[str, dict[str, int]]
+    lane_stats: dict[str, dict[str, int]]
+
+
+def _to_response(application: JobApplication, *, light_skill_match: bool = False) -> ApplicationResponse:
+    """`light_skill_match` drops the per-requirement rows from the skill match, keeping
+    its header and summary: the list endpoint is already large and its cards only need
+    the counters; the detail view fetches the whole table."""
+    response = ApplicationResponse.model_validate(application)
+    if light_skill_match and response.skill_match:
+        response.skill_match = {key: value for key, value in response.skill_match.items() if key != "rows"}
+    return response
 
 
 # ── Auth dependencies ─────────────────────────────────────────────────────────
@@ -361,7 +417,9 @@ async def list_applications(
             live_state=live, run_date=run, query=q, sort=sort,
         )
     )
-    return ApplicationListResponse(applications=[_to_response(a) for a in result.applications])
+    return ApplicationListResponse(
+        applications=[_to_response(a, light_skill_match=True) for a in result.applications]
+    )
 
 
 @router.get("/applications/{application_id}", response_model=ApplicationResponse)
@@ -479,6 +537,17 @@ async def get_feedback(
     return FeedbackResponseModel(**result.__dict__)
 
 
+@router.get("/rules", response_model=RulesResponseModel, summary="Published search rules plus live stats")
+async def get_rules(
+    _device: CurrentDeviceDep,
+    use_case: Annotated[IGetRulesUseCase, Depends(get_get_rules_use_case)],
+) -> RulesResponseModel:
+    """The rules document the job-search agent last published (null until it does), and
+    stats computed from the roles at read time so they never go stale between publishes."""
+    result = await use_case.execute(GetRulesCommand())
+    return RulesResponseModel(**result.__dict__)
+
+
 # ── Ingest / liveness / annotate (X-Ingest-Key, called by the CLI scripts) ───
 
 
@@ -530,6 +599,40 @@ async def enrich_role(
         )
     )
     return EnrichResponseModel(**result.__dict__)
+
+
+@router.post("/skill-match", response_model=SkillMatchResponseModel, dependencies=[IngestAuthDep])
+async def attach_skill_match(
+    body: SkillMatchRequest,
+    use_case: Annotated[IAttachSkillMatchUseCase, Depends(get_attach_skill_match_use_case)],
+) -> SkillMatchResponseModel:
+    """One bad item never fails the batch: unresolvable items come back in `unmatched`,
+    items whose payload failed validation in `invalid` ("<identifier>: <reason>")."""
+    result = await use_case.execute(
+        AttachSkillMatchCommand(
+            items=[
+                AttachSkillMatchItem(
+                    application_id=i.application_id,
+                    jd_url=i.jd_url,
+                    skill_match=i.skill_match,
+                )
+                for i in body.items
+            ]
+        )
+    )
+    return SkillMatchResponseModel(**result.__dict__)
+
+
+@router.post("/rules", response_model=PublishRulesResponseModel, dependencies=[IngestAuthDep])
+async def publish_rules(
+    body: PublishRulesRequest,
+    use_case: Annotated[IPublishRulesUseCase, Depends(get_publish_rules_use_case)],
+) -> PublishRulesResponseModel:
+    try:
+        result = await use_case.execute(PublishRulesCommand(content=body.rules))
+    except InvalidValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PublishRulesResponseModel(**result.__dict__)
 
 
 @router.post("/runs", status_code=204, dependencies=[IngestAuthDep])
