@@ -19,6 +19,8 @@ from backend.application.applications.apply_liveness.handler import ApplyLivenes
 from backend.application.applications.apply_liveness.port import IApplyLivenessUseCase
 from backend.application.applications.archive_application.handler import ArchiveApplicationHandler
 from backend.application.applications.archive_application.port import IArchiveApplicationUseCase
+from backend.application.applications.attach_skill_match.handler import AttachSkillMatchHandler
+from backend.application.applications.attach_skill_match.port import IAttachSkillMatchUseCase
 from backend.application.applications.create_application.handler import CreateApplicationHandler
 from backend.application.applications.create_application.port import ICreateApplicationUseCase
 from backend.application.applications.enrich_role.handler import EnrichRoleHandler
@@ -29,12 +31,17 @@ from backend.application.applications.get_feedback.handler import GetFeedbackHan
 from backend.application.applications.get_feedback.port import IGetFeedbackUseCase
 from backend.application.applications.get_metrics.handler import GetMetricsHandler
 from backend.application.applications.get_metrics.port import IGetMetricsUseCase
+from backend.application.applications.get_rules.handler import GetRulesHandler
+from backend.application.applications.get_rules.port import IGetRulesUseCase
 from backend.application.applications.ingest_batch.handler import IngestBatchHandler
 from backend.application.applications.ingest_batch.port import IIngestBatchUseCase
 from backend.application.applications.list_applications.handler import ListApplicationsHandler
 from backend.application.applications.list_applications.port import IListApplicationsUseCase
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
+from backend.application.applications.ports.search_rules_repository import ISearchRulesRepository
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
+from backend.application.applications.publish_rules.handler import PublishRulesHandler
+from backend.application.applications.publish_rules.port import IPublishRulesUseCase
 from backend.application.applications.update_application.handler import UpdateApplicationHandler
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
 from backend.application.applications.update_contact_stage.handler import UpdateContactStageHandler
@@ -58,6 +65,9 @@ from backend.infrastructure.adapters.driven.supabase.application_repository impo
 )
 from backend.infrastructure.adapters.driven.supabase.login_attempt_repository import (
     SupabaseLoginAttemptRepository,
+)
+from backend.infrastructure.adapters.driven.supabase.search_rules_repository import (
+    SupabaseSearchRulesRepository,
 )
 from backend.infrastructure.adapters.driven.supabase.search_run_repository import (
     SupabaseSearchRunRepository,
@@ -144,12 +154,17 @@ def get_search_run_repository(client: PostgrestClientDep) -> ISearchRunRepositor
     return SupabaseSearchRunRepository(client=client)
 
 
+def get_search_rules_repository(client: PostgrestClientDep) -> ISearchRulesRepository:
+    return SupabaseSearchRulesRepository(client=client)
+
+
 def get_login_attempt_repository(client: PostgrestClientDep) -> ILoginAttemptRepository:
     return SupabaseLoginAttemptRepository(client=client)
 
 
 ApplicationRepositoryDep = Annotated[IJobApplicationRepository, Depends(get_application_repository)]
 LoginAttemptRepositoryDep = Annotated[ILoginAttemptRepository, Depends(get_login_attempt_repository)]
+SearchRulesRepositoryDep = Annotated[ISearchRulesRepository, Depends(get_search_rules_repository)]
 
 
 def get_login_use_case(repository: LoginAttemptRepositoryDep, settings: SettingsDep) -> ILoginUseCase:
@@ -203,6 +218,10 @@ def get_enrich_role_use_case(repository: ApplicationRepositoryDep) -> IEnrichRol
     return EnrichRoleHandler(repository=repository)
 
 
+def get_attach_skill_match_use_case(repository: ApplicationRepositoryDep) -> IAttachSkillMatchUseCase:
+    return AttachSkillMatchHandler(repository=repository)
+
+
 def get_update_contact_stage_use_case(repository: ApplicationRepositoryDep) -> IUpdateContactStageUseCase:
     return UpdateContactStageHandler(repository=repository)
 
@@ -216,3 +235,14 @@ def get_feedback_use_case(
     run_repository: Annotated[ISearchRunRepository, Depends(get_search_run_repository)],
 ) -> IGetFeedbackUseCase:
     return GetFeedbackHandler(repository=repository, run_repository=run_repository)
+
+
+def get_publish_rules_use_case(rules_repository: SearchRulesRepositoryDep) -> IPublishRulesUseCase:
+    return PublishRulesHandler(repository=rules_repository)
+
+
+def get_get_rules_use_case(
+    repository: ApplicationRepositoryDep,
+    rules_repository: SearchRulesRepositoryDep,
+) -> IGetRulesUseCase:
+    return GetRulesHandler(rules_repository=rules_repository, application_repository=repository)

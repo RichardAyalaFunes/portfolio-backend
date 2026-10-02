@@ -63,6 +63,7 @@ class JobApplication(AggregateRoot[ApplicationId]):
     extras: dict[str, Any] = field(default_factory=dict)
     contacts: list[dict[str, Any]] = field(default_factory=list)
     application_form: dict[str, Any] = field(default_factory=dict)
+    skill_match: dict[str, Any] = field(default_factory=dict)
     secondary_lanes: list[str] = field(default_factory=list)
     discovery_queries: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
@@ -130,6 +131,13 @@ class JobApplication(AggregateRoot[ApplicationId]):
 
     def set_application_form(self, application_form: dict[str, Any]) -> None:
         self.application_form = application_form
+
+    def set_skill_match(self, payload: dict[str, Any]) -> None:
+        """Replace the JD-requirements-vs-CV/LinkedIn table wholesale. `payload` is what
+        domain.applications.skill_match.normalize_skill_match returned, or {} to clear.
+        An agent write like contacts/application_form, never a review: it does not
+        call mark_reviewed()."""
+        self.skill_match = payload
 
     def update_contact_stage(self, contact_id: str, stage: str) -> bool:
         """Richard's one write to this structure. Returns False if no contact matches."""
