@@ -27,6 +27,13 @@ Credentials (obviously fake, override with environment variables)
     send the token as `Authorization: Bearer ...`. The agent-facing routes
     (POST /skill-match, POST /rules, POST /ingest ...) take `X-Ingest-Key`.
 
+Knowledge library (/api/dashboard/knowledge)
+    Seeded with three small SYNTHETIC pages (a concept note, a lesson with a diagram and an interview
+    case). To look at real content, convert the vault offline and load the result:
+        node .claude/skills/ai-coach/scripts/knowledge/publish-knowledge.js --dry-run --json library.json
+        PYTHONPATH=src <python> scripts/dev_fake_server.py --port 8002 --knowledge-file library.json
+    The file is read into memory only; nothing is sent anywhere.
+
 What is seeded
     41 roles (40 visible, 1 archived) in every state the UI has to handle: all six
     statuses, all five stages, every live_state, the three lanes (some with secondary
@@ -41,6 +48,7 @@ What is seeded
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import uuid
@@ -61,11 +69,16 @@ from backend.domain.applications import identity  # noqa: E402
 from backend.domain.applications.entities.job_application import JobApplication  # noqa: E402
 from backend.domain.applications.skill_match import normalize_skill_match  # noqa: E402
 from backend.domain.applications.value_objects import ApplicationId, Stage, Status  # noqa: E402
+from backend.domain.knowledge.page import KnowledgePage  # noqa: E402
 from backend.infrastructure.adapters.driver.rest.dashboard_controller import (  # noqa: E402
     router as dashboard_router,
 )
+from backend.infrastructure.adapters.driver.rest.knowledge_controller import (  # noqa: E402
+    router as knowledge_router,
+)
 from backend.infrastructure.config.dependencies import (  # noqa: E402
     get_application_repository,
+    get_knowledge_repository,
     get_login_attempt_repository,
     get_postgrest_client,
     get_search_rules_repository,
@@ -74,6 +87,7 @@ from backend.infrastructure.config.dependencies import (  # noqa: E402
 from backend.infrastructure.config.settings import Settings, get_settings  # noqa: E402
 from tests.support.in_memory import (  # noqa: E402
     InMemoryApplicationRepository,
+    InMemoryKnowledgeRepository,
     InMemoryLoginAttemptRepository,
     InMemoryRulesRepository,
     InMemoryRunRepository,
@@ -934,10 +948,109 @@ def build_rules() -> dict[str, Any]:
     }
 
 
+# -- knowledge library ----------------------------------------------------------------
+
+
+def _p(text: str) -> dict[str, Any]:
+    return {"t": "p", "c": [text]}
+
+
+def sample_knowledge_documents() -> list[dict[str, Any]]:
+    """Three invented pages in the published shape, so the section is not empty offline."""
+    concept = "reference/backend/idempotency"
+    lesson = "learn/1-backend/1-4-queues-and-retries"
+    case = "practice/example-backend-2026-10/01-case-refund-once"
+    return [
+        {
+            "slug": concept, "space": "reference", "kind": "concept", "title": "Idempotency",
+            "group": "Backend", "group_order": 1, "order": 1, "domain": "backend",
+            "summary": "Doing it twice has the effect of doing it once.", "read_minutes": 2,
+            "tags": ["reliability", "retries"], "aliases": ["idempotent", "idempotency key"],
+            "links": [], "source_updated": "2026-10-01",
+            "body": {
+                "blocks": [
+                    {"t": "callout", "tone": "lead", "title": "In one line", "c": [_p("Doing it twice has the effect of doing it once.")]},
+                    {"t": "h", "level": 2, "id": "why-it-exists", "c": ["Why it exists"]},
+                    _p("Networks drop replies, so clients retry. Without a guard, a retried payment is charged twice."),
+                    {"t": "section", "variant": "trap", "id": "the-trap", "title": "Watch out",
+                     "c": [_p("A check followed by an action is not idempotent: two requests can both pass the check.")]},
+                ],
+                "outline": [{"id": "why-it-exists", "text": "Why it exists", "level": 2}, {"id": "the-trap", "text": "Watch out", "level": 2}],
+                "related": [{"slug": lesson, "reason": "Links to this page"}],
+            },
+            "search_text": "Idempotency\nidempotent\nidempotency key\nreliability\nretries\nNetworks drop replies, so clients retry. Without a guard, a retried payment is charged twice.",
+        },
+        {
+            "slug": lesson, "space": "learn", "kind": "topic", "title": "1.4 Queues and retries",
+            "group": "Backend", "group_order": 1, "order": 1004, "domain": "1-backend",
+            "summary": "Workers retry, so every handler has to be safe to run twice.", "read_minutes": 3,
+            "tags": ["reliability"], "aliases": [], "links": [concept], "source_updated": "2026-10-01",
+            "body": {
+                "blocks": [
+                    {"t": "section", "variant": "summary", "id": "remind-me", "title": "Remind me (60 seconds)",
+                     "c": [{"t": "p", "c": ["Messages repeat. Make the handler ", {"t": "ref", "slug": concept, "c": ["idempotent"]}, " and the repeat is harmless."]}]},
+                    {"t": "h", "level": 2, "id": "the-lesson", "c": ["The lesson"]},
+                    {"t": "diagram", "kind": "flow", "dir": "LR", "w": 520, "h": 150,
+                     "nodes": [
+                         {"id": "A", "x": 14, "y": 56, "w": 96, "h": 38, "lines": ["Message"], "shape": "rect"},
+                         {"id": "B", "x": 170, "y": 40, "w": 120, "h": 70, "lines": ["Seen before?"], "shape": "diamond"},
+                         {"id": "C", "x": 360, "y": 14, "w": 96, "h": 38, "lines": ["Skip"], "shape": "rect"},
+                         {"id": "D", "x": 360, "y": 98, "w": 96, "h": 38, "lines": ["Process"], "shape": "rect"},
+                     ],
+                     "edges": [
+                         {"pts": [[110, 75], [170, 75]], "label": None, "style": "solid", "arrow": True, "back": False, "lx": 140, "ly": 75},
+                         {"pts": [[290, 75], [360, 33]], "label": ["Yes"], "style": "solid", "arrow": True, "back": False, "lx": 325, "ly": 54},
+                         {"pts": [[290, 75], [360, 117]], "label": ["No"], "style": "solid", "arrow": True, "back": False, "lx": 325, "ly": 96},
+                     ]},
+                    {"t": "table", "head": [["Failure"], ["Response"]], "align": ["left", "left"],
+                     "rows": [[["Handler crashed"], ["Retry with the same key"]], [["Poison message"], ["Move it to a dead letter queue"]]]},
+                ],
+                "outline": [{"id": "remind-me", "text": "Remind me (60 seconds)", "level": 2}, {"id": "the-lesson", "text": "The lesson", "level": 2}],
+                "related": [{"slug": concept, "reason": "Linked from this page"}],
+            },
+            "search_text": "1.4 Queues and retries\nreliability\nMessages repeat. Make the handler idempotent and the repeat is harmless.\nHandler crashed Retry with the same key Poison message Move it to a dead letter queue",
+        },
+        {
+            "slug": case, "space": "practice", "kind": "case", "title": "Case 1 · Refund once",
+            "group": "Example Backend (2026-10)", "group_order": 1, "order": 10, "domain": "example-backend-2026-10",
+            "summary": "Tests: idempotency, race conditions.", "read_minutes": 2,
+            "tags": [], "aliases": [], "links": [concept], "source_updated": "2026-10-01",
+            "body": {
+                "blocks": [
+                    {"t": "facts", "items": [{"k": "Lens", "c": ["backend"]}, {"k": "Tests", "c": ["idempotency, race conditions"]}]},
+                    {"t": "section", "variant": "prompt", "id": "paste-in-chat", "title": "The interviewer says",
+                     "c": [{"t": "prompt", "text": "Two requests ask for the same refund within 30 ms.\nQ: guarantee it is paid once."}]},
+                    {"t": "section", "variant": "ladder", "id": "probe-ladder", "title": "Probe ladder",
+                     "c": [{"t": "ladder", "labels": {"q": "Probe", "a": "Term you are hunting"}, "items": [
+                         {"id": "P1", "q": ["What stops both from paying?"], "a": [{"t": "b", "c": ["Row lock"]}]},
+                         {"id": "P2", "q": ["And without a lock?"], "a": [{"t": "b", "c": ["Idempotency key"]}]}]}]},
+                    {"t": "section", "variant": "scoring", "id": "scoring", "title": "Scoring",
+                     "c": [{"t": "score", "strong": [["Names a database constraint"]], "fail": [["Solves it in the prompt"]], "other": None}]},
+                    {"t": "section", "variant": "reveal", "id": "model-answer", "title": "Model answer (90 seconds)",
+                     "c": [_p("Lock the order row, store an idempotency key with a unique constraint, call the provider outside the transaction.")]},
+                ],
+                "outline": [{"id": "paste-in-chat", "text": "The interviewer says", "level": 2}, {"id": "probe-ladder", "text": "Probe ladder", "level": 2}],
+                "related": [{"slug": concept, "reason": "Linked from this page"}],
+            },
+            "search_text": "Case 1 · Refund once\nTwo requests ask for the same refund within 30 ms.\nLock the order row, store an idempotency key with a unique constraint.",
+        },
+    ]
+
+
+def build_knowledge(path: Optional[Path]) -> InMemoryKnowledgeRepository:
+    """The synthetic sample, or the documents in `path` (the publisher's --json output)."""
+    if path is None:
+        documents = sample_knowledge_documents()
+    else:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        documents = loaded["documents"] if isinstance(loaded, dict) else loaded
+    return InMemoryKnowledgeRepository([KnowledgePage.from_document(doc) for doc in documents])
+
+
 # -- app -----------------------------------------------------------------------------
 
 
-def build_app() -> FastAPI:
+def build_app(knowledge_file: Optional[Path] = None) -> FastAPI:
     """The dashboard router over in-memory fakes. Nothing here can reach Supabase."""
     settings = Settings(
         _env_file=None,  # never read a real .env
@@ -950,6 +1063,7 @@ def build_app() -> FastAPI:
     rules = InMemoryRulesRepository()
     rules.seed(build_rules())
     attempts = InMemoryLoginAttemptRepository()
+    knowledge = build_knowledge(knowledge_file)
 
     def refuse_supabase() -> None:
         raise RuntimeError("the offline dev server never talks to Supabase; use the in-memory fakes")
@@ -963,11 +1077,13 @@ def build_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(dashboard_router)
+    app.include_router(knowledge_router)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_application_repository] = lambda: applications
     app.dependency_overrides[get_search_run_repository] = lambda: runs
     app.dependency_overrides[get_search_rules_repository] = lambda: rules
     app.dependency_overrides[get_login_attempt_repository] = lambda: attempts
+    app.dependency_overrides[get_knowledge_repository] = lambda: knowledge
     app.dependency_overrides[get_postgrest_client] = refuse_supabase  # safety net for new providers
 
     @app.get("/health", tags=["ops"])
@@ -981,6 +1097,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Offline dashboard API with fake data (never touches Supabase).")
     parser.add_argument("--host", default="127.0.0.1", help="interface to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8001, help="port to listen on (default: 8001)")
+    parser.add_argument(
+        "--knowledge-file",
+        type=Path,
+        default=None,
+        help="publisher --json output to load into the knowledge library (default: three synthetic pages)",
+    )
     args = parser.parse_args()
 
     # Show the documented fake defaults; never echo a value that came from the environment.
@@ -993,7 +1115,8 @@ def main() -> None:
     print(f"  login:      POST /api/dashboard/auth/login  password={password_hint}", flush=True)
     print(f"  ingest key: X-Ingest-Key: {ingest_hint}", flush=True)
     print(f"  CORS:       {', '.join(FRONTEND_ORIGINS)}", flush=True)
-    uvicorn.run(build_app(), host=args.host, port=args.port, log_level="info")
+    app = build_app(args.knowledge_file)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":
