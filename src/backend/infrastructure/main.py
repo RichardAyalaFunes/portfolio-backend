@@ -14,6 +14,7 @@ from backend.infrastructure.adapters.driven.openai.openai_realtime_client import
 from backend.infrastructure.adapters.driven.openai.openai_tts_client import OpenAITTSClient
 from backend.infrastructure.adapters.driver.rest.avatar_controller import router as avatar_router
 from backend.infrastructure.adapters.driver.rest.dashboard_controller import router as dashboard_router
+from backend.infrastructure.adapters.driver.rest.knowledge_controller import router as knowledge_router
 from backend.infrastructure.adapters.driver.rest.realtime_controller import router as realtime_router
 from backend.infrastructure.adapters.driver.websocket.avatar_ws_handler import (
     router as avatar_ws_router,
@@ -99,6 +100,7 @@ app.include_router(avatar_router)
 app.include_router(avatar_ws_router)
 app.include_router(realtime_router)
 app.include_router(dashboard_router)
+app.include_router(knowledge_router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

@@ -11,11 +11,14 @@ the "database", and a column the mappers forget to carry simply disappears.
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
+from backend.application.knowledge.ports.knowledge_repository import IKnowledgeRepository
+from backend.domain.knowledge.page import KnowledgePage
 from backend.application.applications.ports.search_rules_repository import ISearchRulesRepository
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.application.auth.ports.login_attempt_repository import ILoginAttemptRepository
@@ -167,6 +170,99 @@ class InMemoryRulesRepository(ISearchRulesRepository):
 
     def peek(self) -> Optional[dict[str, Any]]:
         return copy.deepcopy(self._stored)
+
+
+class InMemoryKnowledgeRepository(IKnowledgeRepository):
+    """The knowledge_pages table. Rows are stored the way the Supabase adapter writes them (summary
+    fields, `links`, `body`, `search_text`), so a field the adapter forgets to carry disappears here
+    too, and `match` uses the same word-start rule as the database regex."""
+
+    def __init__(self, pages: Optional[Iterable[KnowledgePage]] = None) -> None:
+        self._rows: dict[str, dict[str, Any]] = {}
+        for page in pages or []:
+            self._store(page)
+
+    def _store(self, page: KnowledgePage) -> None:
+        self._rows[page.slug] = copy.deepcopy(
+            {
+                "slug": page.slug,
+                "space": page.space,
+                "kind": page.kind,
+                "title": page.title,
+                "group": page.group,
+                "group_order": page.group_order,
+                "order": page.order,
+                "domain": page.domain,
+                "summary": page.summary,
+                "read_minutes": page.read_minutes,
+                "tags": list(page.tags),
+                "aliases": list(page.aliases),
+                "source_updated": page.source_updated,
+                "links": list(page.links),
+                "body": page.body,
+                "source_path": page.source_path,
+                "content_hash": page.content_hash,
+                "published_at": _now(),
+                "search_text": page.search_text,
+            }
+        )
+
+    @staticmethod
+    def _summary(row: dict[str, Any]) -> dict[str, Any]:
+        keys = (
+            "slug", "space", "kind", "title", "group", "group_order", "order", "domain",
+            "summary", "read_minutes", "tags", "aliases", "source_updated",
+        )  # fmt: skip
+        return copy.deepcopy({key: row[key] for key in keys})
+
+    def _ordered(self, rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(rows, key=lambda r: (r["space"], r["group_order"], r["group"], r["order"], r["title"]))
+
+    # -- synchronous helpers for seeding and asserting -------------------------
+
+    def slugs(self) -> list[str]:
+        return sorted(self._rows)
+
+    def row(self, slug: str) -> dict[str, Any]:
+        return copy.deepcopy(self._rows[slug])
+
+    # -- IKnowledgeRepository ---------------------------------------------------
+
+    async def upsert(self, pages: list[KnowledgePage]) -> None:
+        for page in pages:
+            self._store(page)
+
+    async def list_summaries(self) -> list[dict[str, Any]]:
+        return [self._summary(row) for row in self._ordered(self._rows.values())]
+
+    async def get(self, slug: str) -> Optional[dict[str, Any]]:
+        row = self._rows.get(slug)
+        if row is None:
+            return None
+        detail = self._summary(row)
+        detail.update(
+            copy.deepcopy({key: row[key] for key in ("links", "body", "source_path", "content_hash", "published_at")})
+        )
+        return detail
+
+    async def backlinks(self, slug: str) -> list[dict[str, Any]]:
+        rows = [row for row in self._rows.values() if slug in row["links"] and row["slug"] != slug]
+        return [self._summary(row) for row in self._ordered(rows)]
+
+    async def list_slugs(self) -> list[str]:
+        return list(self._rows)
+
+    async def delete(self, slugs: list[str]) -> None:
+        for slug in slugs:
+            self._rows.pop(slug, None)
+
+    async def match(self, terms: list[str]) -> list[dict[str, Any]]:
+        patterns = [re.compile(r"(?<!\w)" + re.escape(term), re.IGNORECASE) for term in terms]
+        rows = [row for row in self._rows.values() if all(p.search(row["search_text"]) for p in patterns)]
+        return [self._summary(row) for row in self._ordered(rows)]
+
+    async def search_texts(self, slugs: list[str]) -> dict[str, str]:
+        return {slug: self._rows[slug]["search_text"] for slug in slugs if slug in self._rows}
 
 
 class InMemoryLoginAttemptRepository(ILoginAttemptRepository):

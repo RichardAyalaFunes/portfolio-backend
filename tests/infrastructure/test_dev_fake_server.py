@@ -212,3 +212,38 @@ def test_the_app_never_builds_a_supabase_client(fake, client):
     with pytest.raises(RuntimeError, match="never talks to Supabase"):
         refuse()
     assert client.get("/health").json() == {"status": "ok", "mode": "fake-data"}
+
+
+# -- the knowledge library ---------------------------------------------------------
+
+
+def test_the_synthetic_knowledge_sample_is_valid_and_served_behind_the_login(fake, client):
+    from backend.domain.knowledge.page import KnowledgePage
+
+    for document in fake.sample_knowledge_documents():
+        KnowledgePage.from_document(document)  # the sample stays valid as the contract evolves
+
+    assert client.get(f"{BASE}/knowledge").status_code == 401
+    pages = client.get(f"{BASE}/knowledge", headers=bearer(client)).json()["pages"]
+    assert {p["space"] for p in pages} == {"learn", "reference", "practice"}
+
+    page = client.get(f"{BASE}/knowledge/pages/reference/backend/idempotency", headers=bearer(client)).json()
+    assert [b["slug"] for b in page["backlinks"]] == [
+        "learn/1-backend/1-4-queues-and-retries",
+        "practice/example-backend-2026-10/01-case-refund-once",
+    ]
+
+
+def test_a_knowledge_file_from_the_publisher_replaces_the_sample(fake, tmp_path, monkeypatch):
+    import json
+
+    from tests.support.knowledge_builders import make_document
+
+    monkeypatch.setattr("backend.application.auth.login.handler._WRONG_PASSWORD_DELAY_SECONDS", 0)
+    path = tmp_path / "library.json"
+    path.write_text(json.dumps({"documents": [make_document("reference/backend/only-page", title="Only page")]}), encoding="utf-8")
+
+    with TestClient(fake.build_app(path)) as test_client:
+        pages = test_client.get(f"{BASE}/knowledge", headers=bearer(test_client)).json()["pages"]
+
+    assert [p["slug"] for p in pages] == ["reference/backend/only-page"]

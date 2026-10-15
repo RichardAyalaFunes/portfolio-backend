@@ -42,6 +42,17 @@ from backend.application.applications.ports.search_rules_repository import ISear
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.application.applications.publish_rules.handler import PublishRulesHandler
 from backend.application.applications.publish_rules.port import IPublishRulesUseCase
+from backend.application.knowledge.get_index.handler import GetKnowledgeIndexHandler
+from backend.application.knowledge.get_index.port import IGetKnowledgeIndexUseCase
+from backend.application.knowledge.get_page.handler import GetKnowledgePageHandler
+from backend.application.knowledge.get_page.port import IGetKnowledgePageUseCase
+from backend.application.knowledge.ports.knowledge_repository import IKnowledgeRepository
+from backend.application.knowledge.prune_pages.handler import PruneKnowledgePagesHandler
+from backend.application.knowledge.prune_pages.port import IPruneKnowledgePagesUseCase
+from backend.application.knowledge.publish_pages.handler import PublishKnowledgePagesHandler
+from backend.application.knowledge.publish_pages.port import IPublishKnowledgePagesUseCase
+from backend.application.knowledge.search.handler import SearchKnowledgeHandler
+from backend.application.knowledge.search.port import ISearchKnowledgeUseCase
 from backend.application.applications.update_application.handler import UpdateApplicationHandler
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
 from backend.application.applications.update_contact_stage.handler import UpdateContactStageHandler
@@ -62,6 +73,9 @@ from backend.infrastructure.adapters.driven.openai.openai_realtime_client import
 from backend.infrastructure.adapters.driven.openai.openai_tts_client import OpenAITTSClient
 from backend.infrastructure.adapters.driven.supabase.application_repository import (
     SupabaseJobApplicationRepository,
+)
+from backend.infrastructure.adapters.driven.supabase.knowledge_repository import (
+    SupabaseKnowledgeRepository,
 )
 from backend.infrastructure.adapters.driven.supabase.login_attempt_repository import (
     SupabaseLoginAttemptRepository,
@@ -246,3 +260,33 @@ def get_get_rules_use_case(
     rules_repository: SearchRulesRepositoryDep,
 ) -> IGetRulesUseCase:
     return GetRulesHandler(rules_repository=rules_repository, application_repository=repository)
+
+
+# ── Knowledge library ────────────────────────────────────────────────────────
+
+
+def get_knowledge_repository(client: PostgrestClientDep) -> IKnowledgeRepository:
+    return SupabaseKnowledgeRepository(client=client)
+
+
+KnowledgeRepositoryDep = Annotated[IKnowledgeRepository, Depends(get_knowledge_repository)]
+
+
+def get_publish_knowledge_pages_use_case(repository: KnowledgeRepositoryDep) -> IPublishKnowledgePagesUseCase:
+    return PublishKnowledgePagesHandler(repository=repository)
+
+
+def get_prune_knowledge_pages_use_case(repository: KnowledgeRepositoryDep) -> IPruneKnowledgePagesUseCase:
+    return PruneKnowledgePagesHandler(repository=repository)
+
+
+def get_knowledge_index_use_case(repository: KnowledgeRepositoryDep) -> IGetKnowledgeIndexUseCase:
+    return GetKnowledgeIndexHandler(repository=repository)
+
+
+def get_knowledge_page_use_case(repository: KnowledgeRepositoryDep) -> IGetKnowledgePageUseCase:
+    return GetKnowledgePageHandler(repository=repository)
+
+
+def get_search_knowledge_use_case(repository: KnowledgeRepositoryDep) -> ISearchKnowledgeUseCase:
+    return SearchKnowledgeHandler(repository=repository)
