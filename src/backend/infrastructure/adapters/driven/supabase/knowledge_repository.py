@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from postgrest import AsyncPostgrestClient
+from postgrest import AsyncPostgrestClient, ReturnMethod
 
 from backend.application.knowledge.ports.knowledge_repository import IKnowledgeRepository
 from backend.domain.knowledge.page import KnowledgePage
@@ -85,7 +85,8 @@ class SupabaseKnowledgeRepository(IKnowledgeRepository):
             return
         published_at = datetime.now(tz=timezone.utc).isoformat()
         rows = [page_to_row(page, published_at) for page in pages]
-        await self._client.table(TABLE).upsert(rows, on_conflict="slug").execute()
+        # return=minimal: the rows carry whole bodies, and the caller only needs to know it worked
+        await self._client.table(TABLE).upsert(rows, on_conflict="slug", returning=ReturnMethod.minimal).execute()
 
     async def list_summaries(self) -> list[dict[str, Any]]:
         response = await _ordered(self._client.table(TABLE).select(SUMMARY_COLUMNS)).execute()
@@ -117,7 +118,7 @@ class SupabaseKnowledgeRepository(IKnowledgeRepository):
     async def delete(self, slugs: list[str]) -> None:
         if not slugs:
             return
-        await self._client.table(TABLE).delete().in_("slug", slugs).execute()
+        await self._client.table(TABLE).delete(returning=ReturnMethod.minimal).in_("slug", slugs).execute()
 
     async def match(self, terms: list[str]) -> list[dict[str, Any]]:
         builder = self._client.table(TABLE).select(SUMMARY_COLUMNS)

@@ -44,6 +44,7 @@ async def test_upsert_sends_every_row_with_the_database_column_names_on_the_slug
     assert request.url.path == "/rest/v1/knowledge_pages"
     assert request.url.params["on_conflict"] == "slug"
     assert "merge-duplicates" in request.headers["prefer"]
+    assert "return=minimal" in request.headers["prefer"]  # the reply would otherwise echo every body
     assert len(body) == 1
     row = body[0]
     assert row["slug"] == "reference/backend/idempotency"
@@ -134,6 +135,7 @@ async def test_delete_filters_the_slugs_with_in():
 
     request = recorder.only
     assert request.method == "DELETE"
+    assert "return=minimal" in request.headers["prefer"]
     assert request.url.params["slug"] == "in.(reference/a/b,learn/c/d)"
 
 
