@@ -345,6 +345,62 @@ def role(
 # -- contacts, application form, skill-match tables ----------------------------------
 
 
+def came_back(
+    app: JobApplication,
+    *,
+    kind: str,
+    gap: int,
+    prior_status: str,
+    decided_by: str,
+    decided_days_ago: int,
+    status_reset: bool = True,
+    alert: Optional[str] = None,
+    drop_reason: Optional[str] = None,
+    changes: Optional[dict[str, Any]] = None,
+) -> JobApplication:
+    """Give a role a comeback record and the older posting it replaced, as ingest would
+    have left it: the new posting first, the first one behind it."""
+    older_run = days_ago(gap + 1)
+    app.postings.append(
+        {
+            "id": str(8_000_000 + int(app.postings[0]["id"]) % 1000),
+            "url": f"{app.jd_url}-earlier",
+            "source": app.source,
+            "run_date": older_run.isoformat(),
+            "posted_date": older_run.isoformat(),
+            "live_state": None,
+        }
+    )
+    app.first_seen = older_run
+    app.extras = {
+        **app.extras,
+        "returns": [
+            {
+                "kind": kind,
+                "at": TODAY.isoformat(),
+                "gap_days": gap,
+                "previous_last_seen": days_ago(gap).isoformat(),
+                "posting_id": app.postings[0]["id"],
+                "posting_url": app.postings[0]["url"],
+                "prior": {
+                    "status": prior_status,
+                    "decided_by": decided_by,
+                    "decided_on": days_ago(decided_days_ago).isoformat(),
+                    "drop_reason": drop_reason,
+                    "drop_stage": "read" if drop_reason else None,
+                    "score": app.score,
+                    "application_stage": app.application_stage.value if app.has_applied else None,
+                },
+                "status_reset": status_reset,
+                "status_after": app.status.value,
+                "alert": alert,
+                "changes": changes or {},
+            }
+        ],
+    }
+    return app
+
+
 def contacts_for(slug: str, company: str, *, sent_first: bool = False) -> list[dict[str, Any]]:
     people = (
         ("Alex Demo", "Head of Engineering", "hiring_manager", "Leads the team this role reports to."),
@@ -676,6 +732,24 @@ def build_roles() -> list[JobApplication]:
              queries=(FOUND_LATAM,), tags=("location_unsure", "salary_unknown")),
         role(40, "Nectar Gate", "AI Engineer", "ai_engineer", 81, status="Approved", age=4, live="CLOSED",
              queries=(AI_LATAM, AI_PERU), reviewed=3, note="Approved before the posting closed; worth a look."),
+        # -- roles that came back: a new posting of a role we already held
+        came_back(
+            role(42, "Quill Harbor", "Applied AI Engineer", "ai_engineer", 84, age=1, queries=(AI_PERU,), reviewed=35,
+                 note="Seniority bar looked too high.", pay="USD 6-8k"),
+            kind="reposted", gap=35, prior_status="Rejected", decided_by="you", decided_days_ago=35,
+            changes={"salary_text": [None, "USD 6-8k"]},
+        ),
+        came_back(
+            role(43, "Rowan Deep", "Founding Engineer", "founding_engineer", 82, age=0, queries=(FOUND_AI,)),
+            kind="reopened", gap=144, prior_status="Dropped", decided_by="agent", decided_days_ago=144,
+            drop_reason="deal_breaker", changes={"work_mode": ["On-site", "Remote"]},
+        ),
+        came_back(
+            role(44, "Sable Point", "Forward Deployed Engineer", "forward_deployed_engineer", 88, status="Approved",
+                 stage="Interviewing", age=2, queries=(FDE_LATAM,), reviewed=10, note="Second round booked."),
+            kind="reposted", gap=21, prior_status="Approved", decided_by="you", decided_days_ago=10,
+            status_reset=False, alert="applied_before",
+        ),
         # -- deleted by Richard (archived): hidden from the list, still counted in per-line stats
         role(41, "Oak Meridian", "AI Engineer", "ai_engineer", 72, status="Rejected", age=30, queries=(AI_PERU,),
              reviewed=20, note="Deleted: duplicate of another posting.", archived=True),

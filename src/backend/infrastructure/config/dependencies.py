@@ -53,6 +53,8 @@ from backend.application.knowledge.publish_pages.handler import PublishKnowledge
 from backend.application.knowledge.publish_pages.port import IPublishKnowledgePagesUseCase
 from backend.application.knowledge.search.handler import SearchKnowledgeHandler
 from backend.application.knowledge.search.port import ISearchKnowledgeUseCase
+from backend.application.applications.split_posting.handler import SplitPostingHandler
+from backend.application.applications.split_posting.port import ISplitPostingUseCase
 from backend.application.applications.update_application.handler import UpdateApplicationHandler
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
 from backend.application.applications.update_contact_stage.handler import UpdateContactStageHandler
@@ -210,6 +212,10 @@ def get_create_application_use_case(repository: ApplicationRepositoryDep) -> ICr
 
 def get_update_application_use_case(repository: ApplicationRepositoryDep) -> IUpdateApplicationUseCase:
     return UpdateApplicationHandler(repository=repository)
+
+
+def get_split_posting_use_case(repository: ApplicationRepositoryDep) -> ISplitPostingUseCase:
+    return SplitPostingHandler(repository=repository)
 
 
 def get_archive_application_use_case(repository: ApplicationRepositoryDep) -> IArchiveApplicationUseCase:

@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from typing import Any, Optional
 
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
-from backend.domain.applications import identity
+from backend.domain.applications import identity, returns
 from backend.domain.applications.entities.job_application import JobApplication
 from backend.domain.applications.value_objects import ApplicationId, Status
 
@@ -131,6 +131,15 @@ def _as_posting(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _snapshot(application: JobApplication) -> dict[str, Any]:
+    """The few facts a comeback record compares against, taken before the fold."""
+    fields = ("title", "salary_text", "location_text", "work_mode", "employment_type",
+              "score", "band", "drop_reason", "drop_stage")
+    out: dict[str, Any] = {name: getattr(application, name) for name in fields}
+    out["status"] = application.status
+    return out
+
+
 class IngestBatchHandler(IIngestBatchUseCase):
     def __init__(self, repository: IJobApplicationRepository) -> None:
         self._repository = repository
@@ -140,6 +149,11 @@ class IngestBatchHandler(IIngestBatchUseCase):
 
         added = updated = reposts = 0
         near_hits: list[dict[str, Any]] = []
+        returned: list[dict[str, Any]] = []
+        # Days a search ran and uploaded: the dates any row was first or last seen. A role
+        # only "came back" if a search between its last sighting and now could have seen it
+        # gone; otherwise it was just never looked for.
+        search_days = {d for a in existing for d in (a.first_seen, a.last_seen) if d is not None}
 
         for incoming in command.roles:
             raw = _normalize(incoming)
@@ -169,6 +183,10 @@ class IngestBatchHandler(IIngestBatchUseCase):
 
             if match.kind in (identity.MatchKind.POSTING, identity.MatchKind.EXACT):
                 target = next(a for a in existing if str(a.id) == str(match.role["id"]))
+                # Read the row as it was before this fold touches it: the comeback record
+                # keeps what the role looked like when it went away.
+                before = _snapshot(target)
+                previous_last_seen = target.last_seen or target.first_seen
                 is_new_posting = target.add_posting(_as_posting(raw))
                 target.last_seen = raw["run_date"]
                 target.add_discovery_queries(raw["discovery_queries"])
@@ -178,6 +196,9 @@ class IngestBatchHandler(IIngestBatchUseCase):
                     target.tags = raw["tags"]
                 if is_new_posting and match.kind == identity.MatchKind.EXACT:
                     reposts += 1
+                    comeback = self._record_return(target, raw, before, previous_last_seen, search_days)
+                    if comeback is not None:
+                        returned.append(comeback)
                 if command.replace:
                     target.status = Status(raw["status"])
                     target.notes = raw.get("notes", target.notes)
@@ -209,4 +230,81 @@ class IngestBatchHandler(IIngestBatchUseCase):
                 {"incoming_title": raw.get("title"), "matched_id": str(match.role["id"]), "score": match.score}
             )
 
-        return IngestBatchResponse(added=added, updated=updated, reposts=reposts, total=len(existing), near_hits=near_hits)
+        return IngestBatchResponse(added=added, updated=updated, reposts=reposts, total=len(existing), near_hits=near_hits, returned=returned)
+
+
+    def _record_return(
+        self,
+        target: JobApplication,
+        raw: dict[str, Any],
+        before: dict[str, Any],
+        previous_last_seen: Any,
+        search_days: set[Any],
+    ) -> Optional[dict[str, Any]]:
+        """A role we hold was posted again under a new posting id. Decide whether that is
+        a comeback (see domain.applications.returns), record it in extras["returns"], and
+        move the row back into the review queue when the rules say so. Returns the short
+        summary for the ingest response, or None when it is not a comeback."""
+        gap = returns.gap_days(previous_last_seen, raw["run_date"])
+        kind = returns.classify(
+            gap=gap,
+            is_new_posting=True,
+            searched_between=returns.searched_between(previous_last_seen, raw["run_date"], search_days),
+        )
+        if kind is None:
+            return None
+
+        history = returns.returns_of(target.extras)
+        decision = returns.decide_status(
+            status=before["status"],
+            incoming_status=Status(raw["status"]),
+            has_applied=target.has_applied,
+            previous_returns=len(history),
+        )
+        prior = returns.prior_decision(
+            status=before["status"],
+            reviewed_at=target.reviewed_at,
+            last_seen=previous_last_seen,
+            drop_reason=before["drop_reason"],
+            drop_stage=before["drop_stage"],
+            score=before["score"],
+            application_stage=target.application_stage.value if target.has_applied else None,
+        )
+        event = returns.build_event(
+            kind=kind,
+            gap=gap,
+            run_date=raw["run_date"],
+            previous_last_seen=previous_last_seen,
+            posting_id=raw.get("id"),
+            posting_url=raw.get("jd_url"),
+            prior=prior,
+            decision=decision,
+            changes=returns.changes_between(before, raw),
+        )
+        target.extras = {**target.extras, "returns": [*history, event]}
+
+        if decision.reset:
+            # The new posting is the current truth: take its facts, keep Richard's notes,
+            # review stamp and application stage.
+            target.status = decision.new_status
+            for name in ("title", "group", "score", "band"):
+                if raw.get(name) is not None:
+                    setattr(target, name, raw[name])
+            for name in returns.REFRESH_FIELDS:
+                value = raw.get(name)
+                if value is not None or name in returns.CLEAR_WHEN_ABSENT:
+                    setattr(target, name, value)
+
+        return {
+            "id": str(target.id),
+            "company": target.company,
+            "title": target.title,
+            "kind": kind,
+            "gap_days": gap,
+            "prior_status": prior["status"],
+            "prior_decided_by": prior["decided_by"],
+            "status_after": decision.new_status.value,
+            "status_reset": decision.reset,
+            "alert": decision.alert,
+            "evergreen": len(history) + 1 >= returns.EVERGREEN_AFTER,
+        }

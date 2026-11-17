@@ -55,7 +55,7 @@ def test_seeded_roles_cover_every_state_the_ui_has_to_handle(fake):
     shown = visible(roles)
 
     assert len(roles) == len({str(r.id) for r in roles}) == len({r.identity_key for r in roles})
-    assert len(shown) == 40 and len(roles) - len(shown) == 1
+    assert len(shown) == 43 and len(roles) - len(shown) == 1
     assert {r.status for r in shown} == set(Status)
     assert {r.application_stage for r in shown} == set(Stage)
     assert {r.live_state for r in shown} == {"LISTED", "CLOSED", "SUSPENDED", "GONE", "UNVERIFIABLE", None}
@@ -144,7 +144,7 @@ def test_login_with_the_documented_fake_password_unlocks_the_seeded_api(client):
     listed = client.get(f"{BASE}/applications", headers=headers)
     assert listed.status_code == 200
     applications = listed.json()["applications"]
-    assert len(applications) == 40
+    assert len(applications) == 43
     assert all("rows" not in a["skill_match"] for a in applications)
     analysed = [a for a in applications if a["skill_match"]]
     assert len(analysed) == 2

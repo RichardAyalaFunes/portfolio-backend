@@ -393,6 +393,61 @@ def test_an_ingest_repost_through_the_api_keeps_the_table(api):
     assert after.skill_match == normalize_skill_match(skill_match_payload())
 
 
+def test_a_role_that_comes_back_is_reported_and_carries_its_history(api):
+    role = {
+        "id": "4001", "title": "Applied AI Engineer", "company": "Acme AI", "group": "ai_engineer",
+        "score": 82, "jd_url": "https://jobs.example.com/jobs/view/4001", "source": "linkedin",
+        "run_date": "2026-09-17",
+    }
+    other = {**role, "id": "9001", "title": "Other", "company": "Other Co", "run_date": "2026-10-10"}
+    api.client.post(f"{BASE}/ingest", headers=INGEST, json={"roles": [role, other]})
+    (acme,) = [a for a in api.applications.all() if a.company == "Acme AI"]
+    acme.status = Status.REJECTED
+    api.applications.add(acme)
+
+    back = api.client.post(
+        f"{BASE}/ingest",
+        headers=INGEST,
+        json={"roles": [{**role, "id": "5002", "jd_url": "https://jobs.example.com/jobs/view/5002", "run_date": "2026-11-16"}]},
+    )
+
+    assert back.status_code == 200
+    (summary,) = back.json()["returned"]
+    assert (summary["kind"], summary["prior_status"], summary["status_after"]) == ("reposted", "Rejected", "To validate")
+    listed = api.client.get(f"{BASE}/applications", headers=api.login()).json()["applications"]
+    row = next(r for r in listed if r["company"] == "Acme AI")
+    assert row["status"] == "To validate"
+    assert row["extras"]["returns"][0]["prior"]["status"] == "Rejected"
+
+
+def test_split_route_moves_one_posting_to_a_new_role(api):
+    merged = make_application(
+        company="Acme AI", title="Applied AI Engineer", status=Status.REJECTED,
+        postings=[{"id": "5002", "url": "https://x/5002", "run_date": "2026-11-16"}, {"id": "4001", "url": "https://x/4001", "run_date": "2026-09-17"}],
+    )
+    api.applications.add(merged)
+    headers = api.login()
+
+    response = api.client.post(f"{BASE}/applications/{merged.id}/split", headers=headers, json={"posting_id": "5002"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [p["id"] for p in body["original"]["postings"]] == ["4001"]
+    assert body["created"]["status"] == "To validate"
+    assert len(api.applications.all()) == 2
+
+
+def test_split_route_status_codes(api):
+    only = make_application(postings=[{"id": "1", "url": "https://x/1"}])
+    api.applications.add(only)
+    headers = api.login()
+
+    assert api.client.post(f"{BASE}/applications/{uuid4()}/split", headers=headers, json={"posting_id": "1"}).status_code == 404
+    assert api.client.post(f"{BASE}/applications/{only.id}/split", headers=headers, json={"posting_id": "zz"}).status_code == 404
+    assert api.client.post(f"{BASE}/applications/{only.id}/split", headers=headers, json={"posting_id": "1"}).status_code == 422
+    assert api.client.post(f"{BASE}/applications/{only.id}/split", json={"posting_id": "1"}).status_code in (401, 403)
+
+
 # -- /rules -----------------------------------------------------------------------
 
 

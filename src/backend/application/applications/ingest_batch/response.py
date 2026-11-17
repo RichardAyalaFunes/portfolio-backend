@@ -16,3 +16,5 @@ class IngestBatchResponse:
     reposts: int
     total: int
     near_hits: list[dict[str, Any]] = field(default_factory=list)
+    # Roles we already held that came back under a new posting (domain.applications.returns).
+    returned: list[dict[str, Any]] = field(default_factory=list)

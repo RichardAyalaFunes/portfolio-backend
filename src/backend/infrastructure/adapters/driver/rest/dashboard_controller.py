@@ -47,6 +47,8 @@ from backend.application.applications.list_applications.port import IListApplica
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.application.applications.publish_rules.command import PublishRulesCommand
 from backend.application.applications.publish_rules.port import IPublishRulesUseCase
+from backend.application.applications.split_posting.command import SplitPostingCommand
+from backend.application.applications.split_posting.port import ISplitPostingUseCase
 from backend.application.applications.update_application.command import UpdateApplicationCommand
 from backend.application.applications.update_application.port import IUpdateApplicationUseCase
 from backend.application.applications.update_contact_stage.command import UpdateContactStageCommand
@@ -75,6 +77,7 @@ from backend.infrastructure.config.dependencies import (
     get_metrics_use_case,
     get_publish_rules_use_case,
     get_search_run_repository,
+    get_split_posting_use_case,
     get_update_application_use_case,
     get_update_contact_stage_use_case,
     get_verify_token_use_case,
@@ -169,6 +172,10 @@ class CreateApplicationRequest(BaseModel):
     status: str = "To validate"
 
 
+class SplitPostingRequest(BaseModel):
+    posting_id: str
+
+
 class UpdateApplicationRequest(BaseModel):
     status: Optional[str] = None
     stage: Optional[str] = None
@@ -239,6 +246,7 @@ class IngestResponseModel(BaseModel):
     reposts: int
     total: int
     near_hits: list[dict[str, Any]]
+    returned: list[dict[str, Any]] = []
 
 
 class LivenessRequest(BaseModel):
@@ -473,6 +481,23 @@ async def update_application(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _to_response(result.application)
+
+
+@router.post("/applications/{application_id}/split")
+async def split_posting(
+    application_id: str,
+    body: SplitPostingRequest,
+    _device: CurrentDeviceDep,
+    use_case: Annotated[ISplitPostingUseCase, Depends(get_split_posting_use_case)],
+) -> dict[str, ApplicationResponse]:
+    """Undo one wrong merge: the posting becomes a role of its own, back in the queue."""
+    try:
+        result = await use_case.execute(SplitPostingCommand(application_id=application_id, posting_id=body.posting_id))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"original": _to_response(result.original), "created": _to_response(result.created)}
 
 
 @router.patch("/applications/{application_id}/contacts/{contact_id}", response_model=ApplicationResponse)
