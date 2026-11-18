@@ -66,6 +66,24 @@ def _derive_posted_date(posted_relative: Optional[str], run_date: str) -> tuple[
     return run_date, "run_date_fallback"
 
 
+# Sources that are the platform's own timestamp. Anything else is an estimate from a
+# relative phrase ("2 days ago") or the day we found the role.
+REAL_DATE_SOURCES = frozenset({"linkedin_listedAt"})
+
+
+def _apply_real_posted_date(target: JobApplication, raw: dict[str, Any]) -> None:
+    """A re-sent role carrying the platform's real listing date corrects the estimate
+    stored earlier. An estimate never replaces anything already on the row."""
+    if raw.get("posted_date_source") not in REAL_DATE_SOURCES or not raw.get("posted_date"):
+        return
+    day = str(raw["posted_date"])[:10]
+    target.posted_date = date.fromisoformat(day)
+    target.posted_date_source = raw["posted_date_source"]
+    for posting in target.postings:
+        if posting.get("id") == raw.get("id"):
+            posting["posted_date"] = day
+
+
 def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
     role = dict(raw)
     score = role.get("score")
@@ -189,6 +207,7 @@ class IngestBatchHandler(IIngestBatchUseCase):
                 previous_last_seen = target.last_seen or target.first_seen
                 is_new_posting = target.add_posting(_as_posting(raw))
                 target.last_seen = raw["run_date"]
+                _apply_real_posted_date(target, raw)
                 target.add_discovery_queries(raw["discovery_queries"])
                 if "secondary_lanes" in incoming:
                     target.secondary_lanes = raw["secondary_lanes"]
