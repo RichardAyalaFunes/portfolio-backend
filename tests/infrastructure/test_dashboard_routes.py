@@ -338,6 +338,22 @@ def test_patch_still_works_returns_the_whole_table_and_keeps_it(api):
     assert stored.skill_match == normalize_skill_match(skill_match_payload())
 
 
+def test_patch_marks_a_duplicate_and_rejects_a_bad_reason(api):
+    role = make_application()
+    api.applications.add(role)
+    headers = api.login()
+
+    ok = api.client.patch(f"{BASE}/applications/{role.id}", headers=headers, json={"status": "Rejected", "rejection_reason": "duplicate"})
+    bad = api.client.patch(f"{BASE}/applications/{role.id}", headers=headers, json={"rejection_reason": "boring"})
+
+    assert ok.status_code == 200
+    assert (ok.json()["status"], ok.json()["extras"]["rejection_reason"]) == ("Rejected", "duplicate")
+    assert bad.status_code == 422
+    feedback = api.client.get(f"{BASE}/feedback", headers=headers).json()
+    item = next(r for r in feedback["reviewed"] if r["id"] == str(role.id))
+    assert (item["is_duplicate"], item["rejection_reason"]) == (True, "duplicate")
+
+
 def test_patch_on_an_unknown_role_is_404(api):
     response = api.client.patch(f"{BASE}/applications/{uuid4()}", headers=api.login(), json={"status": "Approved"})
 

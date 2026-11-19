@@ -10,6 +10,10 @@ from ...shared.base_entity import AggregateRoot
 from ..value_objects import APPLIED_STAGES, DEAD_POSTING_STATES, ApplicationId, Stage, Status
 
 
+REJECTION_REASON = "rejection_reason"
+REJECTION_DUPLICATE = "duplicate"
+
+
 @dataclass
 class JobApplication(AggregateRoot[ApplicationId]):
     """
@@ -82,6 +86,14 @@ class JobApplication(AggregateRoot[ApplicationId]):
         return self.application_stage in APPLIED_STAGES
 
     @property
+    def is_duplicate(self) -> bool:
+        """Rejected because it repeats a role already in the dashboard (the same job under
+        another title or company name, or posted twice). Not a verdict on the job itself:
+        the feedback loop must not read it as taste, and a repost does not resurface it.
+        Stored in extras so no migration is needed; status stays Rejected."""
+        return self.status == Status.REJECTED and self.extras.get(REJECTION_REASON) == REJECTION_DUPLICATE
+
+    @property
     def posting_is_dead(self) -> bool:
         """The liveness sweep found the posting closed, suspended or gone."""
         return self.live_state in DEAD_POSTING_STATES
@@ -117,7 +129,15 @@ class JobApplication(AggregateRoot[ApplicationId]):
         self.notes_updated_at = datetime.now(tz=timezone.utc).date()
 
     def set_status(self, status: Status) -> None:
+        """Any status change drops the rejection reason: it only means something while the
+        role is Rejected. `mark_duplicate` sets it again."""
         self.status = status
+        if REJECTION_REASON in self.extras:
+            self.extras = {k: v for k, v in self.extras.items() if k != REJECTION_REASON}
+
+    def mark_duplicate(self) -> None:
+        self.status = Status.REJECTED
+        self.extras = {**self.extras, REJECTION_REASON: REJECTION_DUPLICATE}
 
     def set_stage(self, stage: Stage) -> None:
         self.application_stage = stage

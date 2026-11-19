@@ -181,6 +181,7 @@ class UpdateApplicationRequest(BaseModel):
     stage: Optional[str] = None
     notes: Optional[str] = None
     jd_url: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 class UpdateContactStageRequest(BaseModel):
@@ -475,11 +476,13 @@ async def update_application(
         result = await use_case.execute(
             UpdateApplicationCommand(
                 application_id=application_id, status=body.status, stage=body.stage,
-                notes=body.notes, jd_url=body.jd_url,
+                notes=body.notes, jd_url=body.jd_url, rejection_reason=body.rejection_reason,
             )
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _to_response(result.application)
 
 

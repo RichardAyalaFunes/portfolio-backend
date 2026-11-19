@@ -53,6 +53,8 @@ def _reviewed_item(application: JobApplication) -> dict[str, Any]:
         "discovery_queries": application.discovery_queries,
         "location_text": application.location_text,
         "drop_reason": application.drop_reason,
+        "rejection_reason": application.extras.get("rejection_reason"),
+        "is_duplicate": application.is_duplicate,
         "notes": application.notes,
         "reviewed_at": application.reviewed_at.isoformat() if application.reviewed_at else None,
         "jd_url": application.jd_url,
@@ -88,6 +90,9 @@ def query_performance(applications: list[JobApplication]) -> dict[str, dict[str,
             row["surfaced"] += 1
             if application.status == Status.APPROVED or advanced:
                 row["approved"] += 1
+            elif application.is_duplicate:
+                # Rejected for repeating another role: says nothing about the search line.
+                row["duplicate"] += 1
             elif application.status == Status.REJECTED:
                 row["rejected"] += 1
             if advanced:
@@ -103,7 +108,7 @@ def disagreements(applications: list[JobApplication]) -> dict[str, list[dict[str
         ],
         "rejected_high_score": [
             _brief(a) for a in applications
-            if a.status == Status.REJECTED and a.score is not None and a.score >= HIGH_SCORE
+            if a.status == Status.REJECTED and not a.is_duplicate and a.score is not None and a.score >= HIGH_SCORE
         ],
     }
 
@@ -113,11 +118,12 @@ def summarize(reviewed: list[JobApplication]) -> dict[str, Any]:
     tags_on_rejected: Counter[str] = Counter()
     for application in reviewed:
         by_lane[application.group or "unknown"][application.status.value] += 1
-        if application.status == Status.REJECTED:
+        if application.status == Status.REJECTED and not application.is_duplicate:
             tags_on_rejected.update(application.tags)
     return {
         "reviewed_total": len(reviewed),
         "with_notes": sum(1 for a in reviewed if a.notes),
+        "duplicates": sum(1 for a in reviewed if a.is_duplicate),
         "by_status": dict(Counter(a.status.value for a in reviewed)),
         "by_stage": dict(Counter(a.application_stage.value for a in reviewed)),
         "by_lane": {lane: dict(counts) for lane, counts in by_lane.items()},
