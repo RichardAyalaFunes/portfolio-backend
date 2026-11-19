@@ -119,6 +119,7 @@ def decide_status(
     incoming_status: Status,
     has_applied: bool,
     previous_returns: int,
+    is_duplicate: bool = False,
 ) -> Decision:
     """What the comeback does to the stored status. Never touches notes or the application
     stage. Order matters: an application he sent outranks everything."""
@@ -127,6 +128,9 @@ def decide_status(
         # for another profile; tell him, change nothing.
         return Decision(reset=False, new_status=status, alert="applied_before")
     if previous_returns >= EVERGREEN_AFTER:
+        return Decision(reset=False, new_status=status)
+    if is_duplicate:
+        # Rejected for repeating another role; a new posting of it is still that copy.
         return Decision(reset=False, new_status=status)
     if status in RESURFACE_FROM and incoming_status in RESURFACE_TO:
         return Decision(reset=True, new_status=incoming_status)

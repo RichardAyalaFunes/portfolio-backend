@@ -279,6 +279,7 @@ class IngestBatchHandler(IIngestBatchUseCase):
             incoming_status=Status(raw["status"]),
             has_applied=target.has_applied,
             previous_returns=len(history),
+            is_duplicate=target.is_duplicate,
         )
         prior = returns.prior_decision(
             status=before["status"],

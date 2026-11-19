@@ -2,7 +2,8 @@
 
 from backend.application.applications.ports.application_repository import IJobApplicationRepository
 from backend.domain.applications.value_objects import ApplicationId, Stage, Status
-from backend.domain.shared.errors import NotFoundError
+from backend.domain.applications.entities.job_application import REJECTION_DUPLICATE
+from backend.domain.shared.errors import InvalidValueError, NotFoundError
 
 from .command import UpdateApplicationCommand
 from .port import IUpdateApplicationUseCase
@@ -19,15 +20,27 @@ class UpdateApplicationHandler(IUpdateApplicationUseCase):
         if application is None:
             raise NotFoundError(f"No application with id {command.application_id}")
 
+        if command.rejection_reason is not None and command.rejection_reason != REJECTION_DUPLICATE:
+            raise InvalidValueError(f"Unknown rejection reason: {command.rejection_reason!r}")
+        if command.rejection_reason == REJECTION_DUPLICATE and command.status not in (None, Status.REJECTED.value):
+            raise InvalidValueError("A duplicate is a rejection: send status Rejected with it")
+
         if command.status is not None:
             application.set_status(Status(command.status))
+        if command.rejection_reason == REJECTION_DUPLICATE:
+            application.mark_duplicate()
         if command.stage is not None:
             application.set_stage(Stage(command.stage))
         if command.notes is not None:
             application.update_notes(command.notes)
         if command.jd_url is not None:
             application.jd_url = command.jd_url
-        if command.status is not None or command.stage is not None or command.notes is not None:
+        if (
+            command.status is not None
+            or command.stage is not None
+            or command.notes is not None
+            or command.rejection_reason is not None
+        ):
             application.mark_reviewed()
 
         updated = await self._repository.update(application)
