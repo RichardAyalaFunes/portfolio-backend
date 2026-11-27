@@ -221,6 +221,19 @@ class IngestBatchHandler(IIngestBatchUseCase):
                 if command.replace:
                     target.status = Status(raw["status"])
                     target.notes = raw.get("notes", target.notes)
+                    # A correction re-ingest (e.g. after an audit) must be able to fix the
+                    # verdict, not just the status. Only fields the caller actually sent
+                    # are overwritten; an explicit null clears the stored value.
+                    if "score" in incoming:
+                        target.score = raw.get("score")
+                        target.band = raw.get("band")
+                    elif "band" in incoming:
+                        target.band = raw.get("band")
+                    if "group" in incoming:
+                        target.group = raw.get("group")
+                    for f in FLAT_FIELDS:
+                        if f in incoming and f not in ("run_date", "jd_url"):
+                            setattr(target, f, raw.get(f))
                 await self._repository.update(target)
                 updated += 1
                 continue
