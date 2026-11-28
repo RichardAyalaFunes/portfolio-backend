@@ -32,6 +32,7 @@ from backend.application.applications.get_feedback.port import IGetFeedbackUseCa
 from backend.application.applications.get_metrics.handler import GetMetricsHandler
 from backend.application.applications.get_metrics.port import IGetMetricsUseCase
 from backend.application.applications.get_rules.handler import GetRulesHandler
+from backend.application.applications.get_search_stats.handler import GetSearchStatsHandler
 from backend.application.applications.get_rules.port import IGetRulesUseCase
 from backend.application.applications.ingest_batch.handler import IngestBatchHandler
 from backend.application.applications.ingest_batch.port import IIngestBatchUseCase
@@ -266,6 +267,13 @@ def get_get_rules_use_case(
     rules_repository: SearchRulesRepositoryDep,
 ) -> IGetRulesUseCase:
     return GetRulesHandler(rules_repository=rules_repository, application_repository=repository)
+
+
+def get_search_stats_use_case(
+    repository: ApplicationRepositoryDep,
+    run_repository: Annotated[ISearchRunRepository, Depends(get_search_run_repository)],
+) -> GetSearchStatsHandler:
+    return GetSearchStatsHandler(repository=repository, run_repository=run_repository)
 
 
 # ── Knowledge library ────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 """A re-sent role carrying the platform's real listing date corrects an earlier estimate."""
 
+import pytest
 from datetime import date
 
 from backend.application.applications.ingest_batch.command import IngestBatchCommand
@@ -25,6 +26,7 @@ async def row(repo):
     return (await repo.list(include_archived=False))[0]
 
 
+@pytest.mark.asyncio
 async def test_real_date_replaces_the_estimate():
     repo = InMemoryApplicationRepository()
     await ingest(repo, role())
@@ -39,6 +41,7 @@ async def test_real_date_replaces_the_estimate():
     assert fixed.postings[0]["posted_date"] == "2026-11-17"
 
 
+@pytest.mark.asyncio
 async def test_an_estimate_never_overwrites_a_real_date():
     repo = InMemoryApplicationRepository()
     await ingest(repo, role(posted_date="2026-11-17", posted_date_source="linkedin_listedAt"))

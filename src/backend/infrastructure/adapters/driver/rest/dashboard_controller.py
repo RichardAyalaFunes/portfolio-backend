@@ -47,6 +47,7 @@ from backend.application.applications.list_applications.port import IListApplica
 from backend.application.applications.ports.search_run_repository import ISearchRunRepository
 from backend.application.applications.publish_rules.command import PublishRulesCommand
 from backend.application.applications.publish_rules.port import IPublishRulesUseCase
+from backend.application.applications.get_search_stats.handler import GetSearchStatsHandler
 from backend.application.applications.split_posting.command import SplitPostingCommand
 from backend.application.applications.split_posting.port import ISplitPostingUseCase
 from backend.application.applications.update_application.command import UpdateApplicationCommand
@@ -71,6 +72,7 @@ from backend.infrastructure.config.dependencies import (
     get_feedback_use_case,
     get_get_application_use_case,
     get_get_rules_use_case,
+    get_search_stats_use_case,
     get_ingest_batch_use_case,
     get_list_applications_use_case,
     get_login_use_case,
@@ -553,6 +555,15 @@ async def list_runs(
 ) -> RunListResponse:
     runs = await repository.list_all()
     return RunListResponse(runs=[RunResponse(**run) for run in runs])
+
+
+@router.get("/search-stats", summary="Which searches bring roles: per search line and portal, across runs")
+async def get_search_stats(
+    _device: CurrentDeviceDep,
+    use_case: Annotated[GetSearchStatsHandler, Depends(get_search_stats_use_case)],
+    since: Optional[date] = None,
+) -> dict[str, Any]:
+    return await use_case.execute(since.isoformat() if since else None)
 
 
 @router.get("/feedback", response_model=FeedbackResponseModel, summary="Richard's review feedback since a date")
